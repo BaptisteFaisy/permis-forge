@@ -62,6 +62,31 @@ function parseBody(input: any): any {
   }
 }
 
+/** Per-repository health probe: which table answers, and what it says. */
+async function health(repos: Repositories, projectId: string): Promise<Record<string, unknown>> {
+  const probes: { name: string; run: () => Promise<unknown> }[] = [
+    { name: 'policy_rule', run: () => repos.policies.listRules(projectId) },
+    { name: 'zone', run: () => repos.zones.listZones(projectId) },
+    { name: 'permit', run: () => repos.permits.listPermits({ projectId }) },
+    { name: 'ledger', run: () => repos.ledger.list({ projectId, limit: 1 }) },
+    { name: 'request', run: () => repos.requests.listPending() },
+    { name: 'kill_switch', run: () => repos.killSwitches.get('project', projectId) },
+    { name: 'agent_profile', run: () => repos.profiles.getProfile(projectId, 'health-probe') },
+    { name: 'trust_state', run: () => repos.trust.getState('health-probe') },
+    { name: 'hook_token', run: () => repos.hookTokens.listForAccount('health-probe') },
+  ];
+  const results: Record<string, string> = {};
+  for (const probe of probes) {
+    try {
+      await probe.run();
+      results[probe.name] = 'ok';
+    } catch (error) {
+      results[probe.name] = error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200);
+    }
+  }
+  return results;
+}
+
 /** Installation health: what is stored, and is the ledger chain intact? */
 async function status(repos: Repositories, projectId: string): Promise<Record<string, unknown>> {
   const [rules, zones, permits, entries, pending] = await Promise.all([
@@ -94,6 +119,8 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
 
   if (action === 'status') return respond(200, await status(repos, projectId));
 
+  if (action === 'health') return respond(200, { projectId, tables: await health(repos, projectId) });
+
   if (action === 'mint-token') {
     const accountId = String(body?.accountId ?? '');
     if (!accountId) return respond(400, { error: 'ACCOUNT_ID_REQUIRED' });
@@ -113,7 +140,7 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
 
   return respond(400, {
     error: 'UNKNOWN_ACTION',
-    allowed: ['status', 'mint-token', 'approve-request', 'deny-request', 'revoke-permit'],
+    allowed: ['status', 'health', 'mint-token', 'approve-request', 'deny-request', 'revoke-permit'],
   });
 }
 
@@ -156,6 +183,8 @@ export async function handleAdmin(input: WebTriggerRequest | any): Promise<WebTr
     return await dispatch(runtime.repos, runtime.secret, parseBody(input));
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    // Visible dans `forge logs` : une erreur avalée ne se diagnostique pas.
+    console.error('[permis-admin] failure:', error);
     return respond(500, { error: 'ADMIN_FAILURE', detail });
   }
 }
