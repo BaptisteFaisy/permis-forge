@@ -10,7 +10,10 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": false,
-    "noEmit": true,
+    // Forge bundle src/ avec ts-loader : l'émission doit rester active ici.
+    // La CI type-check avec `tsc --noEmit`, qui force le drapeau elle-même.
+    "noEmit": false,
+    "outDir": "dist",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

@@ -2,6 +2,7 @@
  * End-to-end unit tests for the MCP action handlers (spec §14).
  */
 import {
+  createToken,
   checkPermission,
   declareAction,
   getAgentStanding,
@@ -133,6 +134,29 @@ describe('MCP handlers (spec §14)', () => {
     expect(result.actions[0].decision).toBe('allow');
     expect(result.actions[1].decision).toBe('deny');
     expect(result.groupedRequestId).toMatch(/^RQ-2026-\d{6}$/);
+  });
+
+  it('createToken mints a personal token once and stores only its hash', async () => {
+    const raw = await createToken({
+      payload: { label: 'laptop' },
+      context: { accountId: 'pilot-1' },
+    });
+    const result = JSON.parse(raw);
+
+    expect(result.ok).toBe(true);
+    expect(String(result.token).length).toBeGreaterThan(20);
+    expect(result.tokenHash).not.toBe(result.token);
+    expect(result.usage.environmentVariable).toBe('PERMIS_AGENT_TOKEN');
+
+    const repos = getDefaultRepositories();
+    const stored = await repos.hookTokens.listForAccount('pilot-1');
+    expect(stored).toHaveLength(1);
+    expect(stored[0].tokenHash).toBe(result.tokenHash);
+  });
+
+  it('createToken refuses when the caller identity is missing', async () => {
+    const raw = await createToken({ payload: {}, context: {} });
+    expect(JSON.parse(raw).error).toBe('IDENTITY_REQUIRED');
   });
 
   it('getAgentStanding reports the score and current effects', async () => {

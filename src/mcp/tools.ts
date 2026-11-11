@@ -103,6 +103,16 @@ export const TOOLS: ToolDefinition[] = [
     ],
   },
   {
+    key: 'create-hook-token',
+    name: 'Create hook token',
+    verb: 'CREATE',
+    description:
+      'Mint the personal hook token of the calling account. The plaintext token is returned once; only its hash is stored.',
+    inputs: [
+      { name: 'label', type: 'string', required: false, description: 'Optional label for the token, e.g. the machine name.' },
+    ],
+  },
+  {
     key: 'get-agent-standing',
     name: 'Get agent standing',
     verb: 'GET',

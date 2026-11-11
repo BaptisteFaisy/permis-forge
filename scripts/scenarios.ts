@@ -144,16 +144,18 @@ async function scenario7() {
 
 /** POST one hook event to the gate; the ticket travels in a header. */
 async function postHook(command: string, token?: string, issueKey?: string): Promise<string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (issueKey) headers['X-Permis-Issue'] = issueKey;
-  const response = await handleGate(new Request('https://install.webtrigger.atlassian.app/gate', {
+  const headers: Record<string, string[]> = { 'Content-Type': ['application/json'] };
+  if (token) headers.Authorization = [`Bearer ${token}`];
+  if (issueKey) headers['X-Permis-Issue'] = [issueKey];
+  const response = await handleGate({
     method: 'POST',
     headers,
     body: JSON.stringify({ toolName: 'Bash', args: { command }, cwd: '/tmp/demo' }),
-  }));
-  if (response.status !== 200) return `http-${response.status}`;
-  const body: any = await response.json();
+    path: '/public/gate',
+    userPath: '',
+  });
+  if (response.statusCode !== 200) return `http-${response.statusCode}`;
+  const body = JSON.parse(response.body);
   return String(body?.hookSpecificOutput?.permissionDecision ?? 'none');
 }
 

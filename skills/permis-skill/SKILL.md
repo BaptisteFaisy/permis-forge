@@ -1,7 +1,7 @@
 ---
 name: permis-skill
 description: Avant d'agir sur un dépôt, demande la permission de chaque action sensible à l'app « Permis d'agir », respecte le permis obtenu (portée, durée, usages) et déclare l'action après coup. À utiliser dès qu'une clé de ticket est citée ou qu'une action sort de la lecture.
-allowed-tools: check-permission get-policy request-approval get-request-status list-permits declare-action submit-plan get-agent-standing
+allowed-tools: check-permission get-policy request-approval get-request-status list-permits create-hook-token declare-action submit-plan get-agent-standing
 ---
 
 # Permis d'agir (permis-skill)
@@ -50,6 +50,20 @@ classe. Le même vaut pour A-15 (la politique et les hooks) : elle est fermée.
    un permis expiré ne laisse rien passer.
 3. Ne boucle jamais sur `get-request-status` : une demande en attente
    attend un humain, pas une polling loop.
+
+## Les huit outils, et quand t'en servir
+
+| Outil | Quand l'appeler | Ce que tu en fais |
+|---|---|---|
+| `check-permission` | avant toute action qui sort de la lecture | tu lis `decision`, `level`, la règle citée et `guidance` |
+| `get-policy` | en début de ticket, pour planifier | tu repères les classes et zones sensibles avant de proposer un plan |
+| `submit-plan` | ticket complexe, plusieurs actions liées | tu obtiens une décision par action et une seule demande groupée |
+| `request-approval` | quand `check-permission` renvoie `deny` avec un niveau N1/N2 | tu annonces le `requestId` et tu t'arrêtes |
+| `get-request-status` | une seule fois, quand le pilote te relance | tu vérifies `granted` et le permis associé, sans boucler |
+| `list-permits` | avant d'agir pour savoir si un permis couvre déjà la cible | tu réutilises le permis au lieu de redemander |
+| `create-hook-token` | à l'installation du hook sur un poste | tu obtiens le jeton personnel du pilote, affiché une seule fois |
+| `declare-action` | après chaque action exécutée | tu rends le journal complet ; l'oubli coûte du capital |
+| `get-agent-standing` | quand tu veux savoir où tu en es | tu lis ton score et les effets en cours sur tes niveaux |
 
 ## En cas de doute
 

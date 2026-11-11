@@ -1,20 +1,28 @@
 /**
  * Unit tests for the hook gate (web trigger) and the CI verification point.
+ *
+ * The gate speaks the Forge web trigger wire format: the request is a plain
+ * object whose `body` is a string and whose header values are arrays, and the
+ * answer is `{ statusCode, headers, body }`. A Fetch `Request` is also accepted
+ * so the gate can be exercised offline.
  */
-import { handleGate } from '../src';
+import { handleGate, WebTriggerRequest } from '../src/hooks/gate';
 import { issuePermit, newPermitId } from '../src/core/permits';
 import { resolveSigningSecret } from '../src/mcp/runtime';
 import { getDefaultRepositories, resetDefaultRepositories } from '../src/storage';
 import { createHookToken } from '../src/services/approvals-service';
 
-function buildRequest(body: unknown, token?: string): Request {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return new Request('https://install.webtrigger.atlassian.app/gate', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+/** Build a Forge-shaped web trigger request. */
+function forgeRequest(body: unknown, options: { token?: string; issueKey?: string } = {}): WebTriggerRequest {
+  const headers: Record<string, string[]> = { 'Content-Type': ['application/json'] };
+  if (options.token) headers.Authorization = [`Bearer ${options.token}`];
+  if (options.issueKey) headers['X-Permis-Issue'] = [options.issueKey];
+  return { method: 'POST', headers, body: JSON.stringify(body), path: '/public/gate', userPath: '' };
+}
+
+async function call(body: unknown, options: { token?: string; issueKey?: string } = {}) {
+  const response = await handleGate(forgeRequest(body, options));
+  return { statusCode: response.statusCode, payload: JSON.parse(response.body) };
 }
 
 describe('handleGate', () => {
@@ -27,35 +35,78 @@ describe('handleGate', () => {
     token = created.token;
   });
 
+  it('answers in the Forge web trigger format', async () => {
+    const response = await handleGate(forgeRequest({ toolName: 'Read', args: { file_path: 'a.ts' } }, { token }));
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['Content-Type']).toEqual(['application/json']);
+    expect(typeof response.body).toBe('string');
+    expect(JSON.parse(response.body).hookSpecificOutput.hookEventName).toBe('PreToolUse');
+  });
+
   it('rejects a request without a personal token with a 401', async () => {
-    const response = await handleGate(buildRequest({ toolName: 'Bash', args: { command: 'ls' } }));
-    expect(response.status).toBe(401);
+    const { statusCode, payload } = await call({ toolName: 'Bash', args: { command: 'ls' } });
+    expect(statusCode).toBe(401);
+    expect(payload.error).toBe('PERSONAL_TOKEN_REQUIRED');
   });
 
   it('rejects an unknown personal token', async () => {
-    const response = await handleGate(buildRequest({ toolName: 'Bash', args: { command: 'ls' } }, 'wrong-token'));
-    expect(response.status).toBe(401);
+    const { statusCode, payload } = await call(
+      { toolName: 'Bash', args: { command: 'ls' } },
+      { token: 'wrong-token' },
+    );
+    expect(statusCode).toBe(401);
+    expect(payload.error).toBe('UNKNOWN_TOKEN');
   });
 
   it('allows safe reads without creating an approval request', async () => {
-    const response = await handleGate(
-      buildRequest({ toolName: 'Read', args: { file_path: 'src/index.ts' } }, token),
+    const { statusCode, payload } = await call(
+      { toolName: 'Read', args: { file_path: 'src/index.ts' } },
+      { token, issueKey: 'PAY-1' },
     );
-    expect(response.status).toBe(200);
-    const body: any = await response.json();
-    expect(body.hookSpecificOutput?.permissionDecision).toBe('allow');
+    expect(statusCode).toBe(200);
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('allow');
   });
 
-  it('blocks sensitive bash commands when no permit exists (acceptance #7)', async () => {
-    const response = await handleGate(
-      buildRequest({ toolName: 'Bash', args: { command: 'DROP TABLE users;' } }, token),
+  it('blocks a data deletion when no permit exists (acceptance #7)', async () => {
+    const { payload } = await call(
+      { toolName: 'Bash', args: { command: 'psql -c "DELETE FROM sessions"' } },
+      { token, issueKey: 'PAY-1' },
     );
-    expect(response.status).toBe(200);
-    const body: any = await response.json();
-    expect(body.hookSpecificOutput?.permissionDecision).toBe('deny');
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('deny');
   });
 
-  it('verifies a signed permit from a CI step (point d’application n°3)', async () => {
+  it('lets the same deletion through once a permit covers it', async () => {
+    const repos = getDefaultRepositories();
+    const command = 'psql -c "DELETE FROM sessions"';
+    const permit = issuePermit(
+      {
+        id: newPermitId(900, 2026),
+        scope: { actionClass: 'A-09', target: command, issueKey: 'PAY-1', projectId: 'PAY' },
+        holderProfileId: 'default',
+        pilotAccountId: 'pilot-123',
+        issuedAt: new Date().toISOString(),
+        ttlMinutes: 60,
+        uses: 1,
+      },
+      resolveSigningSecret(),
+    );
+    await repos.permits.savePermit(permit);
+
+    const { payload } = await call({ toolName: 'Bash', args: { command } }, { token, issueKey: 'PAY-1' });
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('allow');
+  });
+
+  it('refuses an action beyond N4 that carries no ticket (spec §20)', async () => {
+    const { payload } = await call(
+      { toolName: 'Bash', args: { command: 'psql -c "DELETE FROM sessions"' } },
+      { token },
+    );
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(payload.hookSpecificOutput.permissionDecisionReason).toContain('Ticket reference required');
+  });
+
+  it('verifies a signed permit from a CI step (enforcement point 3)', async () => {
     const repos = getDefaultRepositories();
     const permit = issuePermit(
       {
@@ -71,10 +122,28 @@ describe('handleGate', () => {
     );
     await repos.permits.savePermit(permit);
 
-    const response = await handleGate(buildRequest({ permitId: permit.id }));
-    expect(response.status).toBe(200);
-    const body: any = await response.json();
-    expect(body.found).toBe(true);
-    expect(body.valid).toBe(true);
+    const { statusCode, payload } = await call({ permitId: permit.id });
+    expect(statusCode).toBe(200);
+    expect(payload.found).toBe(true);
+    expect(payload.valid).toBe(true);
+    expect(payload.usesLeft).toBe(1);
+  });
+
+  it('reports an unknown permit as invalid rather than as an error', async () => {
+    const { payload } = await call({ permitId: 'PA-2026-999999' });
+    expect(payload).toEqual({ permitId: 'PA-2026-999999', found: false, valid: false });
+  });
+
+  it('still accepts a Fetch Request, for offline testing', async () => {
+    const headers = new Headers({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` });
+    const request = new Request('https://install.webtrigger.atlassian.app/public/gate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ toolName: 'Read', args: { file_path: 'src/index.ts' } }),
+    });
+
+    const response = await handleGate(request as unknown as WebTriggerRequest);
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).hookSpecificOutput.permissionDecision).toBe('allow');
   });
 });

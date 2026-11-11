@@ -5,6 +5,10 @@
  * storage adapter: nothing is faked, so the demo proves the same code path the
  * Forge app uses. Scenarios are pure functions of a fresh "world".
  */
+// The demo runs outside Forge: force the in-memory storage adapter before any
+// module asks which backend to use.
+process.env.PERMIS_OFFLINE = '1';
+
 import { createDecisionEngine, DecisionEngine } from '../src/core/pipeline';
 import { classifyAction } from '../src/core/classify';
 import { resolvePolicy } from '../src/core/policy';
