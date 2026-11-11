@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "External MCP client configuration for the 'Permis d'agir' server.",
+    "The endpoint is installation-specific: https://mcp.atlassian.com/forge/<appId>,",
+    "where <appId> is the ari:cloud:ecosystem::app/<uuid> written in manifest.yml",
+    "by 'forge create' or 'forge register'. Authentication is OAuth 2.1 and an",
+    "administrator must enable external exposure for the installation first.",
+    "Tools run with the rights of the user who authorized the client, which is",
+    "what makes 'the pilot cannot approve their own request' enforceable.",
+    "See docs/VALIDATIONS.md item 1 and the Rovo MCP module reference."
+  ],
+  "mcpServers": {
+    "permis-agir": {
+      "type": "http",
+      "url": "https://mcp.atlassian.com/forge/<APP_ID>",
+      "auth": {
+        "type": "oauth2",
+        "grantType": "authorization_code",
+        "scopes": ["read:jira-work", "write:jira-work", "read:jira-user"]
+      }
+    }
+  },
+  "expectedTools": [
+    "check-permission",
+    "get-policy",
+    "request-approval",
+    "get-request-status",
+    "list-permits",
+    "declare-action",
+    "submit-plan",
+    "get-agent-standing"
+  ],
+  "agentInstructions": [
+    "Call check-permission before any action beyond reading, with the issue key,",
+    "the announced class and the exact target.",
+    "On 'deny' with a requestId: stop, announce the request number, and wait for",
+    "the pilot. Never poll get-request-status in a loop.",
+    "After acting, call declare-action so the chained ledger stays complete.",
+    "Cite the permit in the commit message: 'Permis-Agent: PA-2026-000417'."
+  ]
+}

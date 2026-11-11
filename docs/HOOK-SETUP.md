@@ -171,6 +171,30 @@ authentication by default** (§18), so the personal token is what identifies the
 
 ---
 
+## 6b. Telling the gate which ticket the action serves
+
+The client payload carries the tool name, its arguments and the working
+directory — never a Jira key. Yet an action beyond N4 without a ticket is
+refused (spec §20: "Action sans ticket : refusée au-delà de N4"), so the gate
+accepts the ticket out of band:
+
+| Transport | Value | Used by |
+|---|---|---|
+| `X-Permis-Issue` request header | the issue key, e.g. `PAY-42` | `examples/hooks/gate-bridge.sh` sends it from `$PERMIS_AGENT_ISSUE` |
+| `issueKey` field in the POST body | the issue key | direct `curl` calls and the MCP tools |
+
+```bash
+export PERMIS_AGENT_TOKEN=<shown once>
+export PERMIS_AGENT_GATE_URL="https://<installation>.webtrigger.atlassian.app/<path>/gate"
+export PERMIS_AGENT_ISSUE=PAY-42      # optional, but required beyond N4
+```
+
+Without a ticket the gate still answers, and still decides: reading stays
+allowed, and anything beyond N4 is refused with the invitation to cite a
+ticket. That refusal is journaled like any other decision.
+
+---
+
 ## 7. What the token is — and is not
 
 The personal token **identifies the pilot**. It does **not** grant any right by itself (§16).
@@ -200,3 +224,52 @@ The personal token **identifies the pilot**. It does **not** grant any right by 
 - Only the tools listed in the `matcher` are watched. Widening the matcher widens the audit
   surface but also the number of interrupted calls: the recommended matcher covers `Bash`, `Edit`
   and `Write`.
+
+---
+
+## 9. Other clients — the same gate, a command bridge
+
+Claude Code is not the only client able to load a Claude Code hooks configuration: **Cursor**
+reads `.claude/settings.json`, `.claude/settings.local.json` and `~/.claude/settings.json` when
+*Settings → Agents → Third-Party Imports → "Include Third-Party Plugins, Skills, and Other
+Configs"* is enabled (on by default). It maps the hook names (`PreToolUse` → `preToolUse`,
+`PostToolUse` → `postToolUse`, `Stop` → `stop`, …), accepts the nested `hookSpecificOutput`
+answer format, and honours `exit code 2` as a block.
+
+What Cursor does **not** document as supported is the `http` hook type — it lists command-based
+and prompt-based hooks. That is why `examples/hooks/gate-bridge.sh` exists: a small POSIX
+bridge that reads the hook payload on stdin, POSTs it to the gate, prints the gate's answer and
+exits 2 when the action must be blocked (or when the gate is unreachable — the bridge fails
+closed, like `onFailure: "block"`).
+
+```jsonc
+// .cursor/hooks.json — Cursor, native format
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/gate-bridge.sh",
+        "matcher": "Shell|Write|Read",
+        "timeout": 15,
+        "failClosed": true
+      }
+    ]
+  }
+}
+```
+
+For Claude Code the HTTP form stays the simplest (no extra process), and the bridge is only
+needed for clients that cannot call an HTTP endpoint from a hook.
+
+### Version and allowlist notes (verified 11 November 2026)
+
+| Fact | Consequence for this setup |
+|---|---|
+| `onFailure: "block"` on command and HTTP hooks requires Claude Code **v2.1.295+** | check the client version before relying on fail-closed behaviour; below that version, use the bridge with `exit 2` (honoured by both clients) |
+| `allowedHttpHookUrls` and `httpHookAllowedEnvVars` are settings-level allowlists applied to HTTP hooks from **every** source | in a managed (enterprise) setup, the gate URL and `PERMIS_AGENT_TOKEN` must be added to those allowlists, otherwise the HTTP hook never fires |
+| Hooks also run **inside subagents**; the payload then carries `agent_id` and `agent_type` | the gate can attribute an action to a sub-agent — this is what makes a delegation chain (a narrower permit for a child agent) enforceable |
+| Cursor merges responses from all sources: any `deny` wins over `ask`, `ask` over `allow` | a project-level hook can tighten a user-level one, never loosen it — the same precedence as the policy grid |
+
+Sources: https://code.claude.com/docs/en/hooks — https://cursor.com/docs/hooks —
+https://cursor.com/docs/reference/third-party-hooks
