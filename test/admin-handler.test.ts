@@ -95,6 +95,14 @@ describe('handleAdmin operations', () => {
     for (const table of tables) expect(payload.tables[table]).toBe('ok');
   });
 
+  it('bootstraps the schema on demand (no-op on the memory adapter)', async () => {
+    const { statusCode, payload } = await call({ action: 'bootstrap-schema' });
+
+    expect(statusCode).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.detail).toContain('memory adapter');
+  });
+
   it('mints a personal token once and stores only its hash', async () => {
     const { statusCode, payload } = await call({
       action: 'mint-token',

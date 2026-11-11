@@ -409,9 +409,32 @@ and the storage adapter waited for a `FORGE_ENVIRONMENT` variable that the platf
 so a deployed app would have silently used the in-memory adapter and lost every decision.
 
 Also observed: one call at **3.41 s** and the first call after a deploy at **15.4 s**, both cold
-starts — the second also creates the ten tables and seeds the organisation rules once. A
-transient `Limits for the current installation have been exceeded` appeared during a burst of
-rapid calls and did not recur; it is noted here rather than hidden.
+starts — the second also created the ten tables and seeded the organisation rules.
+
+**The "transient" limit was not transient, and it was our bug.** It recurred on a later deploy and
+`forge logs` gave the real cause:
+
+```
+ForgeSQLAPIError [ForgeSQLError]: Limits for the current installation have been exceeded
+    at SqlClient.executeDDL
+    at runBootstrap (src/storage/sql-client.ts)
+  responseDetails: { status: 429, statusText: 'Too Many Requests' }
+  code: 'RATE_LIMIT_EXCEEDED'
+```
+
+The schema bootstrap replayed fifteen DDL statements on **every cold start**, and Forge SQL
+rate-limits DDL per installation. Read-only operator calls kept working because they issue no
+DDL, which is what made the failure look selective. Fix: the bootstrap is now **reactive** — a
+query runs first, and only a missing-table error (`1146`) triggers the DDL, once per container,
+followed by one retry. On the normal path the app issues no DDL at all, and an operator can still
+create the schema explicitly with `{"action":"bootstrap-schema"}`. After the fix, five consecutive
+gated calls on a data-deletion command all answered correctly (deny + a new request each time),
+with no 429.
+
+Two lessons worth keeping: a `catch` that answers cleanly without logging makes a platform error
+undiagnosable — the gate now logs before answering; and "it worked once, then failed" on a
+serverless platform usually means a per-container cost that the first container happened to
+afford.
 
 ---
 

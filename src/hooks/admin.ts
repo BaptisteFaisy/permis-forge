@@ -23,6 +23,7 @@ import { approveRequest, createHookToken, denyRequest, revokePermit } from '../s
 import { verifyChain } from '../core/ledger';
 import { Repositories } from '../core/types';
 import { getRuntimeSync } from '../mcp/runtime';
+import { ensureSchema } from '../storage';
 import { WebTriggerRequest, WebTriggerResponse } from './gate';
 
 const ADMIN_HEADER = 'x-permis-admin';
@@ -121,6 +122,13 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
 
   if (action === 'health') return respond(200, { projectId, tables: await health(repos, projectId) });
 
+  // Create the tables and seed the organisation floor once, right after a first
+  // install, so the first real decision does not pay for the DDL.
+  if (action === 'bootstrap-schema') {
+    const result = await ensureSchema();
+    return respond(result.ok ? 200 : 500, result);
+  }
+
   if (action === 'mint-token') {
     const accountId = String(body?.accountId ?? '');
     if (!accountId) return respond(400, { error: 'ACCOUNT_ID_REQUIRED' });
@@ -140,7 +148,15 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
 
   return respond(400, {
     error: 'UNKNOWN_ACTION',
-    allowed: ['status', 'health', 'mint-token', 'approve-request', 'deny-request', 'revoke-permit'],
+    allowed: [
+      'status',
+      'health',
+      'bootstrap-schema',
+      'mint-token',
+      'approve-request',
+      'deny-request',
+      'revoke-permit',
+    ],
   });
 }
 

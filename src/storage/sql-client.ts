@@ -83,6 +83,11 @@ function isBenignDdlError(error: unknown): boolean {
   return /duplicate key name|already exists|1061/i.test(errorMessage(error));
 }
 
+/** Forge SQL reports an absent table with error 1146 / "doesn't exist". */
+function isMissingTableError(error: unknown): boolean {
+  return /1146|doesn't exist|does not exist|no such table/i.test(errorMessage(error));
+}
+
 /** Create the ten tables, then seed the organisation floor rules. */
 async function runBootstrap(ddl: (statement: string) => Promise<unknown>, runner: SqlRunner): Promise<void> {
   for (const statement of SCHEMA_DDL) {
@@ -97,9 +102,31 @@ async function runBootstrap(ddl: (statement: string) => Promise<unknown>, runner
   }
 }
 
+/**
+ * Explicit bootstrap, for the operator endpoint right after a first install.
+ * Returns how many statements were attempted, so the caller can report it.
+ */
+export async function bootstrapSqlSchema(client?: any): Promise<{
+  statements: number;
+  tables: number;
+  rules: number;
+}> {
+  const sqlClient = client ?? loadForgeSqlClient();
+  if (!sqlClient) throw new Error('No SQL client available: run inside Forge.');
+  const ddl = createDdlRunner(sqlClient);
+  if (!ddl) throw new Error('SQL client exposes no DDL endpoint.');
+  await runBootstrap(ddl, createRunner(sqlClient));
+  // The DDL list mixes CREATE TABLE and CREATE INDEX: report both honestly.
+  return {
+    statements: SCHEMA_DDL.length,
+    tables: SCHEMA_DDL.filter((statement) => /CREATE TABLE/i.test(statement)).length,
+    rules: INIT_DEFAULT_RULES_SQL.length,
+  };
+}
+
 // -------------------------------------------------------------------- SQL db
 
-/** Thin wrapper: schema bootstrap, error translation, insert / upsert builders. */
+/** Thin wrapper: reactive schema bootstrap, error translation, upsert builders. */
 export class SqlDb {
   private bootstrap?: Promise<void>;
 
@@ -109,9 +136,14 @@ export class SqlDb {
   ) {}
 
   /**
-   * Create the tables on first use (idempotent) and seed the organisation
-   * floor rules. Index statements are tolerated: MySQL has no
-   * `CREATE INDEX IF NOT EXISTS`, so a second run reports a duplicate name.
+   * Create the tables once per container — but only when a query actually
+   * reports a missing table.
+   *
+   * Replaying the DDL on every cold start is what a first implementation did,
+   * and Forge SQL rate-limits DDL: the installation answered
+   * `429 RATE_LIMIT_EXCEEDED` ("Limits for the current installation have been
+   * exceeded") and every gated action failed closed. Tables are created once
+   * per installation, so the normal path issues no DDL at all.
    */
   private ensureSchema(): Promise<void> {
     if (!this.ddl) return Promise.resolve();
@@ -125,10 +157,17 @@ export class SqlDb {
   }
 
   async rows(query: string, params: Params = []): Promise<DbRow[]> {
-    await this.ensureSchema();
     try {
       return await this.runner(query, params);
     } catch (error) {
+      if (this.ddl && isMissingTableError(error)) {
+        await this.ensureSchema();
+        try {
+          return await this.runner(query, params);
+        } catch (retryError) {
+          throw new Error(`[forge-sql] ${errorMessage(retryError)} :: ${query}`);
+        }
+      }
       throw new Error(`[forge-sql] ${errorMessage(error)} :: ${query}`);
     }
   }
