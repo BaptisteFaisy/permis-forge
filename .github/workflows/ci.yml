@@ -39,9 +39,18 @@ jobs:
         shell: bash
         run: git clean -ffdx -e /node_modules
 
-      # Node est déjà installé sur le runner self-hosted (R630) : pas de
-      # `actions/setup-node`, qui téléchargerait la toolchain à chaque run et
-      # ferait dépasser le budget de 5 minutes.
+      # Node est déjà installé sur le runner self-hosted (R630) : on ajoute son
+      # chemin au PATH sans télécharger de toolchain pour rester sous les 5 min.
+      - name: PATH Node du runner
+        run: |
+          for p in /home/baptiste/tools/node-v22.12.0-linux-x64/bin /home/baptiste/.local/bin /home/baptiste/bin /opt/node/bin; do
+            if [ -x "$p/node" ]; then
+              echo "$p" >> "$GITHUB_PATH"
+              echo "Node trouvé dans $p"
+              break
+            fi
+          done
+
       - name: Node (version du runner)
         run: node --version
 
