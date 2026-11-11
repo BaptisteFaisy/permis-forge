@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/gate-bridge.sh",
+        "matcher": "Shell|Write|Read",
+        "timeout": 15,
+        "failClosed": true
+      }
+    ]
+  },
+  "_comment": [
+    "Cursor loads Claude Code hook configurations (.claude/settings.json) but documents",
+    "command-based and prompt-based hooks, not the http type. This file wires the same",
+    "gate through examples/hooks/gate-bridge.sh, which fails closed on exit code 2.",
+    "Required environment: PERMIS_AGENT_GATE_URL, PERMIS_AGENT_TOKEN, and optionally",
+    "PERMIS_AGENT_ISSUE (the Jira ticket, sent as the X-Permis-Issue header).",
+    "See docs/HOOK-SETUP.md section 9 and https://cursor.com/docs/hooks"
+  ]
+}

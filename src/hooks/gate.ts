@@ -69,11 +69,18 @@ async function verifyPermitMode(body: any): Promise<Response> {
 }
 
 /** Decision mode: the hook asks "may I run this tool?". */
-async function decisionMode(event: HookEvent, accountId: string): Promise<Response> {
+async function decisionMode(request: Request, event: HookEvent, accountId: string): Promise<Response> {
   const runtime = getRuntimeSync();
-  const action = mapHookEventToAction(event, { projectKey: event.cwd ? undefined : undefined });
+  // The ticket is not part of the client payload: the bridge sends it in a
+  // header (or the body). Without it, actions beyond N4 are refused (spec §20).
+  const issueKey = headerValue(request, 'x-permis-issue');
+  const action = mapHookEventToAction(event, {
+    issueKey,
+    projectKey: issueKey && issueKey.includes('-') ? issueKey.split('-')[0] : undefined,
+  });
   const caller = buildCaller({
-    projectId: 'unknown',
+    projectId: action.projectId ?? 'unknown',
+    issueKey,
     profileId: 'default',
     accountId,
     via: 'hook',
@@ -86,6 +93,12 @@ async function decisionMode(event: HookEvent, accountId: string): Promise<Respon
     level: decision.level,
   });
   return jsonResponse(200, body);
+}
+
+/** Read one header, case-insensitively, ignoring empty values. */
+function headerValue(request: Request, name: string): string | undefined {
+  const value = request.headers.get(name);
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 /** Entry point of the web trigger. */
@@ -110,7 +123,7 @@ export async function handleGate(request: Request): Promise<Response> {
   }
   await runtime.repos.hookTokens.touchLastUsed(stored.tokenHash, runtime.now());
   try {
-    return await decisionMode(event, stored.accountId);
+    return await decisionMode(request, event, stored.accountId);
   } catch (error) {
     return jsonResponse(500, { error: 'GATE_FAILURE', detail: String(error) });
   }

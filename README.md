@@ -282,6 +282,28 @@ who authorised the client.
 
 ---
 
+## Try it offline (no Jira site needed)
+
+The eleven acceptance scenarios of the specification run against the real
+decision engine and the in-memory storage — no Atlassian account, no network:
+
+```bash
+npm ci
+node scripts/demo.mjs        # prints the transcript, then "11/11 scenarios passed"
+npx jest                     # 22 suites, unit tests
+node scripts/check-manifest.mjs
+```
+
+Ready-to-use examples ship with the repository:
+
+| File | Purpose |
+|---|---|
+| `examples/hooks/claude-code-settings.json` | the generated Claude Code hooks file (`onFailure: block`) |
+| `examples/hooks/cursor-hooks.json` | the same gate for Cursor, through the command bridge |
+| `examples/hooks/gate-bridge.sh` | POSIX bridge for clients without HTTP hooks; fails closed |
+| `examples/policy/seed-payments.json` | a sample policy for a Payments project (zones, rules, org floor) |
+| `examples/mcp/client-config.json` | external MCP client configuration (OAuth 2.1) |
+
 ## Development
 
 - **Tests**: Jest with `ts-jest` (`jest.config.js`), suites in `test/` (`npm test`, `npm run

@@ -45,6 +45,9 @@ export interface PipelineDeps {
 
 export interface DecisionEngine {
   evaluateAction(action: ActionRequest, caller: AgentCallContext): Promise<Decision>;
+  /** Pure steps, exposed so the simulation console can decide without writing. */
+  classifyAction(action: ActionRequest, opts?: any): Promise<Classification>;
+  resolvePolicy(input: PolicyResolutionInput): Promise<PolicyResolution>;
 }
 
 /** Above this level an action without a ticket is refused (spec §20). */
@@ -53,6 +56,8 @@ const DEFAULT_MAX_LEVEL_WITHOUT_TICKET: AutonomyLevel = 4;
 export function createDecisionEngine(deps: PipelineDeps): DecisionEngine {
   return {
     evaluateAction: (action, caller) => evaluateAction(deps, action, caller),
+    classifyAction: (action, opts) => deps.classify(action, opts),
+    resolvePolicy: async (input) => deps.resolve(input),
   };
 }
 

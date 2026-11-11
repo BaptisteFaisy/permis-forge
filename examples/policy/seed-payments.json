@@ -1,0 +1,191 @@
+{
+  "_comment": [
+    "Sample policy for a 'PAY' (Payments) project. Field names match the",
+    "PolicyRule, Zone and ProjectSettings types in src/core/model, so the file",
+    "can be fed straight to the saveZone / saveRule resolvers.",
+    "Levels follow the catalogue defaults of spec section 6; the project may",
+    "harden them but never soften the organisation floor (spec section 7.2)."
+  ],
+  "projectId": "PAY",
+  "settings": {
+    "projectId": "PAY",
+    "trustEffectsEnabled": true,
+    "defaultPermitTtlMinutes": 120,
+    "killSwitchRequiresDifferentPerson": true,
+    "maxLevelWithoutTicket": 4
+  },
+  "zones": [
+    {
+      "id": "zone-migrations",
+      "projectId": "PAY",
+      "name": "Schema migrations",
+      "pathPatterns": ["**/migrations/**", "**/db/**/*.sql"]
+    },
+    {
+      "id": "zone-secrets",
+      "projectId": "PAY",
+      "name": "Secrets and credentials",
+      "pathPatterns": ["**/.env*", "**/secrets/**", "**/*.pem", "**/id_rsa"]
+    },
+    {
+      "id": "zone-ci",
+      "projectId": "PAY",
+      "name": "CI and delivery",
+      "pathPatterns": ["**/.github/workflows/**", "**/Jenkinsfile", "**/.gitlab-ci.yml"]
+    },
+    {
+      "id": "zone-infra",
+      "projectId": "PAY",
+      "name": "Infrastructure",
+      "pathPatterns": ["**/terraform/**", "**/k8s/**", "**/*.tf"]
+    },
+    {
+      "id": "zone-tests",
+      "projectId": "PAY",
+      "name": "Tests",
+      "pathPatterns": ["**/tests/**", "**/*.test.ts", "**/*.spec.ts"]
+    },
+    {
+      "id": "zone-api-production",
+      "projectId": "PAY",
+      "name": "Production API",
+      "pathPatterns": ["**/api/**"],
+      "component": "payments-api",
+      "environment": "production"
+    },
+    {
+      "id": "zone-policy",
+      "projectId": "PAY",
+      "name": "Agent policy itself",
+      "pathPatterns": ["**/AGENTS.md", "**/CLAUDE.md", "**/.claude/settings.json", "**/.cursor/hooks.json"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "pay-migrations-approval",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-08",
+      "zoneId": "zone-migrations",
+      "level": 2,
+      "mode": "enforce",
+      "approverRole": "data-owner"
+    },
+    {
+      "id": "pay-data-deletion-dual",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-09",
+      "level": 1,
+      "mode": "enforce",
+      "approverRole": "data-owner"
+    },
+    {
+      "id": "pay-test-deletion-approval",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-04",
+      "zoneId": "zone-tests",
+      "level": 2,
+      "mode": "enforce",
+      "approverRole": "tech-lead"
+    },
+    {
+      "id": "pay-ci-approval",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-07",
+      "zoneId": "zone-ci",
+      "level": 2,
+      "mode": "enforce",
+      "approverRole": "platform"
+    },
+    {
+      "id": "pay-infra-approval",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-11",
+      "zoneId": "zone-infra",
+      "level": 2,
+      "mode": "enforce",
+      "approverRole": "platform"
+    },
+    {
+      "id": "pay-production-dual",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-13",
+      "zoneId": "zone-api-production",
+      "level": 1,
+      "mode": "enforce",
+      "approverRole": "service-owner"
+    },
+    {
+      "id": "pay-dependency-observe",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-05",
+      "level": 3,
+      "mode": "observe"
+    },
+    {
+      "id": "pay-outbound-observe",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-14",
+      "level": 3,
+      "mode": "observe"
+    },
+    {
+      "id": "pay-night-hotfix",
+      "scope": "project",
+      "projectId": "PAY",
+      "actionClass": "A-08",
+      "zoneId": "zone-migrations",
+      "conditions": {
+        "incidentLinked": true,
+        "timeWindows": [{ "startHour": 20, "endHour": 7 }]
+      },
+      "level": 3,
+      "mode": "enforce",
+      "approverRole": "oncall-lead"
+    }
+  ],
+  "orgFloor": [
+    {
+      "id": "org-secrets-forbidden",
+      "scope": "org",
+      "actionClass": "A-10",
+      "level": 0,
+      "mode": "enforce"
+    },
+    {
+      "id": "org-destructive-git-forbidden",
+      "scope": "org",
+      "actionClass": "A-12",
+      "level": 0,
+      "mode": "enforce"
+    },
+    {
+      "id": "org-policy-forbidden",
+      "scope": "org",
+      "actionClass": "A-15",
+      "level": 0,
+      "mode": "enforce"
+    },
+    {
+      "id": "org-data-deletion-floor",
+      "scope": "org",
+      "actionClass": "A-09",
+      "level": 1,
+      "mode": "enforce"
+    },
+    {
+      "id": "org-production-floor",
+      "scope": "org",
+      "actionClass": "A-13",
+      "level": 1,
+      "mode": "enforce"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://<INSTALLATION_ID>.webtrigger.atlassian.app/<PATH>/gate",
+            "timeout": 10,
+            "onFailure": "block",
+            "headers": {
+              "Authorization": "Bearer $PERMIS_AGENT_TOKEN"
+            },
+            "allowedEnvVars": [
+              "PERMIS_AGENT_TOKEN"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

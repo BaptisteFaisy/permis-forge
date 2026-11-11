@@ -2,6 +2,8 @@
  * Shared formatting, extraction, and simulation-input helpers for UI resolvers.
  */
 import { ACTION_CLASSES, className, levelName } from '../core/catalog';
+import { targetCovers } from '../core/glob';
+import { Lang } from './i18n';
 import {
   ActionRequest,
   Classification,
@@ -92,6 +94,7 @@ export function summarizePermit(permit: Permit): Record<string, unknown> {
   };
 }
 
+/** Localized summary; `lang` defaults to English so callers stay compatible. */
 export function summarizeRequest(request: {
   id: string;
   actionClass: string;
@@ -100,13 +103,13 @@ export function summarizeRequest(request: {
   status: string;
   createdAt: string;
   approvals: unknown[];
-}): Record<string, unknown> {
+}, lang: Lang = 'en'): Record<string, unknown> {
   return {
     id: request.id,
     actionClass: request.actionClass,
     target: request.target,
     level: request.level,
-    levelName: levelName(request.level, 'en'),
+    levelName: levelName(request.level, lang),
     status: request.status,
     createdAt: request.createdAt,
     approvals: request.approvals.length,
@@ -122,17 +125,21 @@ export function countBy<T>(items: T[], keyOf: (item: T) => string | undefined): 
   return counts;
 }
 
-export function catalogSummary(): Record<string, unknown>[] {
-  return ACTION_CLASSES.map(({ code, nameEn, defaultLevel, locked }) => ({
+export function catalogSummary(lang: Lang = 'en'): Record<string, unknown>[] {
+  return ACTION_CLASSES.map(({ code, defaultLevel, locked }) => ({
     code,
-    name: nameEn,
+    name: className(code, lang),
     defaultLevel,
     locked: locked === true,
   }));
 }
 
-export function decorateRules(rules: PolicyRule[]) {
-  return rules.map((r) => ({ ...r, className: className(r.actionClass, 'en'), levelName: levelName(r.level, 'en') }));
+export function decorateRules(rules: PolicyRule[], lang: Lang = 'en') {
+  return rules.map((r) => ({
+    ...r,
+    className: className(r.actionClass, lang),
+    levelName: levelName(r.level, lang),
+  }));
 }
 
 export function buildLedgerFilter(projectId: string, filters: any = {}): LedgerFilter {
@@ -186,6 +193,35 @@ export async function loadAgentStandings(deps: ResolverDeps, projectId: string) 
 export function decisionForResolution(resolution: PolicyResolution): HookDecision {
   if (resolution.observeOnly || resolution.level >= 4) return 'allow';
   return resolution.level === 3 ? 'ask' : 'deny';
+}
+
+/**
+ * Simulation decision (spec §21.10: the console must answer like the MCP tool).
+ * Read-only: it looks for a permit that already covers the action instead of
+ * consuming one, and never writes to the journal.
+ */
+export async function decisionForSimulation(
+  deps: ResolverDeps,
+  action: ActionRequest,
+  classification: Classification,
+  resolution: PolicyResolution,
+  profileId: string,
+): Promise<HookDecision> {
+  const base = decisionForResolution(resolution);
+  if (base !== 'deny' || resolution.level > 2) return base;
+  const permits = await deps.repos.permits.listPermits({
+    projectId: action.projectId,
+    issueKey: action.issueKey,
+    profileId,
+  });
+  const nowIso = new Date().toISOString();
+  const covered = permits.some(
+    (permit) =>
+      isUsablePermit(permit, nowIso) &&
+      permit.scope.actionClass === classification.actionClass &&
+      targetCovers(permit.scope.target, action.target),
+  );
+  return covered ? 'allow' : 'deny';
 }
 
 export function buildSimulatedAction(payload: any, context: any): ActionRequest {

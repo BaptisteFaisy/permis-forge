@@ -18,6 +18,7 @@ import {
   buildStats,
   catalogSummary,
   decisionForResolution,
+  decisionForSimulation,
   decorateRules,
   isUsablePermit,
   issueKeyOf,
@@ -29,6 +30,7 @@ import {
   summarizePermit,
   summarizeRequest,
 } from './format';
+import { detectLang, statusLabel, t } from './i18n';
 import { issueHookToken } from './mutations';
 import type { ResolverDeps } from './resolvers';
 
@@ -36,8 +38,10 @@ import type { ResolverDeps } from './resolvers';
 export async function issuePanel(deps: ResolverDeps, payload: any, context: any): Promise<ScreenResult> {
   const issueKey = issueKeyOf(payload, context);
   const projectId = projectIdOf(payload, context);
+  const lang = detectLang(payload, context);
+  const title = t(lang, 'screen.issuePanel.title');
   if (!issueKey) {
-    return { issueKey: undefined, projectId, pendingRequests: [], activePermits: [], recentActions: [], deviations: [] };
+    return { lang, title, issueKey: undefined, projectId, pendingRequests: [], activePermits: [], recentActions: [], deviations: [] };
   }
   const nowIso = new Date().toISOString();
   const [pending, permits, entries] = await Promise.all([
@@ -46,42 +50,64 @@ export async function issuePanel(deps: ResolverDeps, payload: any, context: any)
     deps.repos.ledger.list({ projectId, issueId: issueKey }),
   ]);
   const ordered = [...entries].sort((a, b) => b.seq - a.seq);
+  const killSwitchActive = (await deps.repos.killSwitches.listActive(projectId)).some((s) => s.active);
   return {
+    lang,
+    title,
     issueKey,
     projectId,
-    pendingRequests: pending.map(summarizeRequest),
+    killSwitchBanner: killSwitchActive ? t(lang, 'banner.killSwitch') : undefined,
+    pendingRequests: pending.map((r) => ({
+      ...summarizeRequest(r, lang),
+      statusLabel: statusLabel(lang, r.status),
+    })),
     activePermits: permits.filter((p) => isUsablePermit(p, nowIso)).map(summarizePermit),
     recentActions: ordered.slice(0, RECENT_ACTIONS_LIMIT).map(summarizeEntry),
     deviations: ordered.filter((e) => e.kind === 'deviation' || e.kind === 'correction').map(summarizeEntry),
+    actions: {
+      grant: t(lang, 'action.grant'),
+      deny: t(lang, 'action.deny'),
+      clarify: t(lang, 'action.clarify'),
+      revoke: t(lang, 'action.revoke'),
+    },
   };
 }
 
 /** Project settings: policy grid, zones, kill switch, project settings. */
 export async function projectSettings(deps: ResolverDeps, payload: any, context: any): Promise<ScreenResult> {
   const projectId = projectIdOf(payload, context);
+  const lang = detectLang(payload, context);
   const [rules, zones, killSwitch] = await Promise.all([
     deps.repos.policies.listRules(projectId),
     deps.repos.zones.listZones(projectId),
     deps.repos.killSwitches.get('project', projectId),
   ]);
   return {
+    lang,
+    title: t(lang, 'screen.projectSettings.title'),
     projectId,
-    rules: decorateRules(rules),
+    rules: decorateRules(rules, lang),
     zones,
     killSwitch: killSwitch ?? { scope: 'project', projectId, active: false },
+    killSwitchLabels: {
+      activate: t(lang, 'action.activateKillSwitch'),
+      lift: t(lang, 'action.liftKillSwitch'),
+      banner: t(lang, 'banner.killSwitch'),
+    },
     settings: {
       trustEffectsEnabled: true,
       defaultPermitTtlMinutes: DEFAULT_PERMIT_TTL_MINUTES,
       killSwitchRequiresDifferentPerson: true,
       maxLevelWithoutTicket: 4,
     },
-    catalog: catalogSummary(),
+    catalog: catalogSummary(lang),
   };
 }
 
 /** Project page: paginated journal, activity stats, agents, 30-day observation. */
 export async function projectPage(deps: ResolverDeps, payload: any, context: any): Promise<ScreenResult> {
   const projectId = projectIdOf(payload, context);
+  const lang = detectLang(payload, context);
   const page = Math.max(1, Number(payload?.page ?? 1) || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(payload?.pageSize ?? DEFAULT_PAGE_SIZE) || DEFAULT_PAGE_SIZE));
   const [filtered, allEntries, permits, requests, agents] = await Promise.all([
@@ -95,6 +121,8 @@ export async function projectPage(deps: ResolverDeps, payload: any, context: any
   const start = (page - 1) * pageSize;
   const ascEntries = [...allEntries].sort((a, b) => a.seq - b.seq);
   return {
+    lang,
+    title: t(lang, 'screen.projectPage.title'),
     projectId,
     page,
     pageSize,
@@ -109,6 +137,7 @@ export async function projectPage(deps: ResolverDeps, payload: any, context: any
 
 /** Simulation console: full classification + policy resolution without side effects. */
 export async function simulationConsole(deps: ResolverDeps, payload: any, context: any): Promise<ScreenResult> {
+  const lang = detectLang(payload, context);
   const action = buildSimulatedAction(payload, context);
   const engine = deps.engine as EngineLike;
   const profileId = profileIdOf(payload);
@@ -117,20 +146,22 @@ export async function simulationConsole(deps: ResolverDeps, payload: any, contex
   if (classify && resolve) {
     const classification = await classify(action);
     const resolution = await resolve(await buildPolicyInput(deps, action, classification, profileId));
-    const decision = decisionForResolution(resolution);
+    const decision = await decisionForSimulation(deps, action, classification, resolution, profileId);
     return {
       classification,
       resolution,
       decision,
       wouldBlock: resolution.level < 4,
       level: resolution.level,
-      levelName: levelName(resolution.level, 'en'),
+      levelName: levelName(resolution.level, lang),
       reason: resolution.reason,
-      guidance: 'Simulated only: nothing was written, no permit was consumed.',
+      guidance: t(lang, 'notice.simulation'),
+      lang,
+      title: t(lang, 'screen.simulation.title'),
     };
   }
   const evaluate = pickMethod(engine, ['simulateAction', 'evaluateAction']);
-  if (!evaluate) return { error: 'ENGINE_EVALUATION_UNAVAILABLE' };
+  if (!evaluate) return { error: 'ENGINE_EVALUATION_UNAVAILABLE', message: t(lang, 'error.engineUnavailable'), lang };
   const caller: AgentCallContext = {
     projectId: action.projectId ?? 'unknown',
     issueKey: action.issueKey,
@@ -145,14 +176,17 @@ export async function simulationConsole(deps: ResolverDeps, payload: any, contex
     decision: res.decision,
     wouldBlock: res.level < 4,
     level: res.level,
-    levelName: levelName(res.level, 'en'),
+    levelName: levelName(res.level, lang),
     reason: res.reason,
     guidance: res.guidance,
+    lang,
+    title: t(lang, 'screen.simulation.title'),
   };
 }
 
 /** Global page: organisation view, org kill switch, org floor rules, global status. */
 export async function globalPage(deps: ResolverDeps, payload: any, context: any): Promise<ScreenResult> {
+  const lang = detectLang(payload, context);
   const [rules, killSwitch] = await Promise.all([
     deps.repos.policies.listRules(projectIdOf(payload, context)),
     deps.repos.killSwitches.get('org'),
@@ -163,13 +197,20 @@ export async function globalPage(deps: ResolverDeps, payload: any, context: any)
     floorByClass[r.actionClass] = Math.min(floorByClass[r.actionClass] ?? 5, r.level);
   }
   return {
+    lang,
+    title: t(lang, 'screen.globalPage.title'),
     killSwitch: killSwitch ?? { scope: 'org', active: false },
-    orgRules: decorateRules(orgRules),
+    killSwitchLabels: {
+      activate: t(lang, 'action.activateKillSwitch'),
+      lift: t(lang, 'action.liftKillSwitch'),
+      banner: t(lang, 'banner.killSwitch'),
+    },
+    orgRules: decorateRules(orgRules, lang),
     floorByClass,
     status: {
       orgRuleCount: orgRules.length,
       emergencyStopActive: killSwitch?.active === true,
-      classes: catalogSummary().map((c) => ({ ...c, orgFloor: floorByClass[String(c.code)] })),
+      classes: catalogSummary(lang).map((c) => ({ ...c, orgFloor: floorByClass[String(c.code)] })),
     },
   };
 }
@@ -177,6 +218,7 @@ export async function globalPage(deps: ResolverDeps, payload: any, context: any)
 /** Personal settings: personal hook tokens of the current account (spec §16). */
 export async function personalSettings(deps: ResolverDeps, payload: any, context: any): Promise<ScreenResult> {
   const accountId = accountIdOf(context);
+  const lang = detectLang(payload, context);
   const existing = await deps.repos.hookTokens.listForAccount(accountId);
   const tokens = existing.map(({ tokenHash, label, createdAt, lastUsedAt }) => ({
     tokenHash,
@@ -186,14 +228,24 @@ export async function personalSettings(deps: ResolverDeps, payload: any, context
   }));
   // Listing only never exposes a plaintext token: it is shown once, at creation.
   if (payload?.action === 'list' || payload?.generate === false) {
-    return { accountId, tokens, notice: 'Only the hash of a token is stored (spec §16).' };
+    return {
+      lang,
+      title: t(lang, 'screen.personalSettings.title'),
+      accountId,
+      tokens,
+      notice: t(lang, 'notice.onlyHashStored'),
+      generateLabel: t(lang, 'action.generateToken'),
+    };
   }
   const issued = await issueHookToken(deps, accountId, payload?.label);
   return {
+    lang,
+    title: t(lang, 'screen.personalSettings.title'),
     accountId,
     tokens,
     token: issued.token,
     tokenHash: issued.tokenHash,
-    notice: 'This token is shown once. Store it in PERMIS_AGENT_TOKEN.',
+    notice: t(lang, 'notice.tokenShownOnce'),
+    generateLabel: t(lang, 'action.generateToken'),
   };
 }
