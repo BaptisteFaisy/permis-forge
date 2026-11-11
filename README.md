@@ -322,47 +322,44 @@ Ready-to-use examples ship with the repository:
 
 ## Status
 
-The project is under active development (hackathon timeline: 11 November → 22 December 2026).
-The table below maps the functional requirements of the specification (§13) to their priority —
-**M** = required for the submission, **S** = desirable, **C** = after the hackathon — and to the
-state of the code as of 11 November 2026.
+Requirements of the specification (§13), with their priority — **M** = required for the
+submission, **S** = desirable, **C** = after the hackathon — and the state of the code as of
+11 November 2026. "Implemented" always means covered by offline unit tests; the eleven
+acceptance scenarios of §21 run end to end with `node scripts/demo.mjs`.
 
 | # | Requirement | Priority | Status |
 |---|---|---|---|
-| PA-01 | Decide an action from class, zone, conditions and policy in under 2 s | M | Partial — rule, zone, condition and resolution types in `src/core/types.ts`; the resolver is not written yet |
-| PA-02 | Reclassify an action from its target or command, and say so | M | Partial — classification types in place; the deterministic reclassifier is pending |
-| PA-03 | Set the policy per project in a classes × zones grid | M | Partial — rule, zone and scope types in place; the grid and its screen are pending |
-| PA-04 | Create an approval request visible on the ticket, with the §8.1 card | M | Partial — request model and the `request-approval` handler in place; the issue panel is pending |
-| PA-05 | Prevent the pilot from approving their own request | M | **Implemented** — `src/core/approvals.ts` refuses the pilot's own request, unit-tested |
-| PA-06 | Issue, decrement, expire and revoke signed permits | M | Partial — permit model in place; signing, decrement, expiry and revocation pending |
-| PA-07 | Chained, browsable and exportable ledger | M | Partial — the ten tables of the schema are defined in `src/storage/schema.ts`; the hash chain is pending |
-| PA-08 | MCP tools of §14 | M | Partial — the eight tools are declared in `manifest.yml` and their handlers exist in `src/mcp/`; runtime wiring pending |
-| PA-09 | Hook entry point with a personal token, plus the generated hooks file | M | Partial — hooks-file generation, decision mapping and the `gate` web trigger implemented; the personal token store pending |
-| PA-10 | Kill switch per project | M | **Implemented** — `src/core/killswitch.ts`, unit-tested |
-| PA-11 | Simulation console: enter an action, see the decision and the rule | M | Planned — the resolver is pending |
-| PA-12 | Rovo agent to query the policy and the ledger | M | Partial — the `rovo:agent` module and its prompt are in the manifest; wiring pending |
-| PA-13 | Observation mode and the 30-day report | S | Partial — the `observe` rule mode exists in the types; the report is pending |
-| PA-14 | Trust capital and its effects | S | **Implemented** — `src/core/trust.ts` (deltas, promotion, demotion, erosion), unit-tested |
-| PA-15 | Double approval (N1) with distinct roles | S | **Implemented** — `src/core/approvals.ts` requires two approvals with different roles at N1, unit-tested |
-| PA-16 | Plan first: splitting, batch of permits, deviations | S | **Implemented** — `src/core/plan.ts`, unit-tested |
-| PA-17 | Precedents shown on the request card | S | Planned |
-| PA-18 | Organisation policy floor | S | Partial — the `org` scope exists in the types; the floor resolution is pending |
-| PA-19 | Verify a permit from a CI step | S | Partial — the `gate` entry point answers a permit check; the CI step is pending |
-| PA-20 | Detect sensitive actions that were not declared | C | Planned |
-| PA-21 | Propose a policy from the history | C | Planned |
-| PA-22 | Delegation: a sub-agent receives a narrower permit than its parent | C | Planned |
+| PA-01 | Decide an action from class, zone, conditions and policy in under 2 s | M | **Implemented** — `src/core/policy.ts` (most restrictive wins, org floor, class default), `src/core/zones.ts`, `src/core/pipeline.ts`. The 2 s target itself is to be measured on a deployed installation |
+| PA-02 | Reclassify an action from its target or command, and say so | M | **Implemented** — `src/core/classify.ts`: deterministic target and command patterns, composed commands split and judged by their strictest part, optional model-proposed class, doubt resolved to the strictest |
+| PA-03 | Set the policy per project in a classes × zones grid | M | **Implemented** — rules and zones stored per project, `projectSettings` screen with `saveRule` / `saveZone` / `deleteRule` / `deleteZone`; `examples/policy/seed-payments.json` is a ready-made grid |
+| PA-04 | Create an approval request visible on the ticket, with the §8.1 card | M | **Implemented** — `request-approval` creates the request, `issuePanel` returns the card fields (what / why / how / risk / precedents / who) and the three actions |
+| PA-05 | Prevent the pilot from approving their own request | M | **Implemented** — `src/core/approvals.ts`, and the mutation recomputes the pilot flag from the request itself |
+| PA-06 | Issue, decrement, expire and revoke signed permits | M | **Implemented** — `src/core/permits.ts` (HMAC-SHA256 over the granted scope), `src/services/approvals-service.ts`, nightly expiry in `src/triggers.ts` |
+| PA-07 | Chained, browsable and exportable ledger | M | **Implemented** — `src/core/ledger.ts` (SHA-256 chain over canonical JSON), `src/storage/queue.ts` (single-consumer writer), `src/ui/audit.ts` (verification, CSV, Confluence export), filters and pagination on `projectPage` |
+| PA-08 | MCP tools of §14 | M | **Implemented** — the eight tools in `src/mcp/`, wired in `src/index.ts` and declared in `manifest.yml`; the manifest/code guard runs in CI |
+| PA-09 | Hook entry point with a personal token, plus the generated hooks file | M | **Implemented** — `src/hooks/gate.ts` (token hashed, unknown token refused), `personalSettings` issues a token shown once, `buildHookFile` generates the file, examples for Claude Code and Cursor |
+| PA-10 | Kill switch per project | M | **Implemented** — `src/core/killswitch.ts` plus the organisation switch on `globalPage`; permits suspended, requests frozen, reason and different-person rules enforced |
+| PA-11 | Simulation console: enter an action, see the decision and the rule | M | **Implemented** — `simulationConsole`, side-effect free, and proven to answer like the MCP tool (scenario 10) |
+| PA-12 | Rovo agent to query the policy and the ledger | M | Partial — `rovo:agent` and `rovo:skill` are declared with their prompt and starters; validating them needs a deployed app |
+| PA-13 | Observation mode and the 30-day report | S | **Implemented** — an `observe` rule decides and journals without blocking; `summarize30DayObservation` feeds the project page and the promotion suggestions |
+| PA-14 | Trust capital and its effects | S | **Implemented** — `src/core/trust.ts` (deltas, promotion above 80, demotion below 30, suspension at 0, erosion towards 50), injected into the resolution |
+| PA-15 | Double approval (N1) with distinct roles | S | **Implemented** — `src/core/approvals.ts` requires two grants with different roles at N1 |
+| PA-16 | Plan first: splitting, batch of permits, deviations | S | **Implemented** — `src/core/plan.ts` plus `submit-plan`, which groups the approvals of a whole plan into one request |
+| PA-17 | Precedents shown on the request card | S | **Implemented** — `src/services/precedents.ts`: similar requests, outcome, approvers, permit, decision delay and what happened next |
+| PA-18 | Organisation policy floor | S | **Implemented** — a project may harden but never soften: the org rule wins when it is stricter (`source: 'org-floor'`) |
+| PA-19 | Verify a permit from a CI step | S | **Implemented** — the gate answers a `{ permitId }` POST with signature, expiry, revocation and remaining uses |
+| PA-20 | Detect sensitive actions that were not declared | C | **Implemented** — `src/services/drift.ts`: observed changes classified by the real classifier, compared with declarations and the approved plan, penalised once and journaled |
+| PA-21 | Propose a policy from the history | C | **Implemented** — `src/services/policy-suggestions.ts`: evidence-backed proposals, observe before hardening, never a locked class, never above the org floor |
+| PA-22 | Delegation: a sub-agent receives a narrower permit than its parent | C | **Implemented** — `src/services/delegation.ts`: any widening refused with an explicit code, and the whole chain verifiable |
 
-Already implemented and covered by unit tests: the fifteen-class catalogue with its default levels
-and the most-restrictive helper (`src/core/catalog.ts`), path/glob matching shared by zones,
-permits and plans (`src/core/glob.ts`), who may approve and how a request reaches its decision
-(`src/core/approvals.ts`), the kill switch and its reason/different-person rules
-(`src/core/killswitch.ts`), trust capital (`src/core/trust.ts`), the Claude Code hook adapter —
-event mapping, decision mapping, hooks-file generation and gate response body
-(`src/core/gate.ts`), plan-first parsing, evaluation and deviation detection
-(`src/core/plan.ts`), and the shared type model (`src/core/types.ts`). The storage schema, the
-in-memory adapter, the eight MCP handlers, the `gate` web trigger and the two triggers are in
-place; the Jira resolvers, the policy resolver, the deterministic reclassifier and the hash-chained
-ledger are the next pieces.
+**Not done yet.** Deploying to a live Jira site (needs an Atlassian account and site), the
+runtime half of the §18 validations — external MCP identity, web trigger latency under load,
+approver notification — the demo video, and the Devpost and Marketplace submissions. The
+Bitbucket merge gate (enforcement point 3 on pull requests) needs a companion app: an app
+installed on Jira cannot call the Bitbucket API (spec §18). What is delivered instead is the
+permit verification endpoint, which any CI step can call.
+
+Everything runs offline: 289 unit tests, no network, no database, no Forge runtime.
 
 ---
 
