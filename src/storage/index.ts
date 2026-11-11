@@ -63,3 +63,27 @@ export function getDefaultRepositories(): Repositories {
 export function resetDefaultRepositories(): void {
   singleton = undefined;
 }
+
+/**
+ * Create the tables and seed the organisation floor rules on demand.
+ *
+ * The query path bootstraps reactively (only when a table is reported missing),
+ * because replaying DDL on every cold start trips the Forge SQL rate limit
+ * (429 RATE_LIMIT_EXCEEDED, observed live on the installation). This explicit
+ * form is what the operator endpoint calls once after a first install, so the
+ * very first decision does not pay for the DDL.
+ */
+export async function ensureSchema(): Promise<{ ok: boolean; detail: string }> {
+  if (!isForgeRuntime()) return { ok: true, detail: 'memory adapter: no schema to create' };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { bootstrapSqlSchema } = require('./sql-client');
+    const result = await bootstrapSqlSchema();
+    return {
+      ok: true,
+      detail: `${result.tables} tables (${result.statements} DDL statements), ${result.rules} organisation rules`,
+    };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}

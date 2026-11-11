@@ -168,7 +168,8 @@ forge logs -e development -n 40
 
 `src/hooks/admin.ts` is a **second** web trigger, separate from the gate, for bootstrapping and
 demonstrating an installation before any screen is reachable. It accepts five operations:
-`status`, `mint-token`, `approve-request`, `deny-request`, `revoke-permit`.
+`status`, `health`, `bootstrap-schema`, `mint-token`, `approve-request`, `deny-request` and
+`revoke-permit`.
 
 Every call must present the installation secret in `X-Permis-Admin`; the comparison is
 constant-time and a wrong secret is refused with 401. Approvals still go through
@@ -201,9 +202,28 @@ Two defects only a real deployment could reveal, both fixed:
    Without that fix a deployed app would have run on the in-memory adapter and lost every
    decision between invocations.
 
-Also worth knowing: the first call to a fresh container creates the ten tables and seeds the
-organisation floor rules (idempotent), which cost **15.4 s** once; warm calls answer in
-**0.4 s** (see `docs/VALIDATIONS.md` §3).
+Also worth knowing: the first call to a fresh container used to create the ten tables and seed
+the organisation floor rules, which cost **15.4 s** once — and then broke the app (next item).
+
+3. **Forge SQL rate-limits DDL, and containers are short-lived.** The first implementation replayed
+   the fifteen `CREATE TABLE IF NOT EXISTS` / seed statements on **every** cold start. Forge SQL
+   answered `429 RATE_LIMIT_EXCEEDED` — surfaced as
+   `Limits for the current installation have been exceeded` — and *every* gated action failed
+   closed, while read-only operator calls still worked (they issue no DDL). The schema is now
+   created **reactively**: a query runs first, and only if it reports a missing table
+   (`1146` / "doesn't exist") does the bootstrap run once per container, then the query is
+   retried. On the normal path the app issues **no DDL at all**.
+   After a fresh install, an operator can create the schema explicitly instead of letting the
+   first request pay for it:
+
+   ```bash
+   curl -sS -X POST "$ADMIN_URL" -H 'Content-Type: application/json' \
+     -H "X-Permis-Admin: $(cat ~/.atlassian/permis-signing-secret)" \
+     -d '{"action":"bootstrap-schema"}'
+   ```
+
+Diagnosing this was only possible because the gate logs the exception before answering: a
+`catch` that returns a clean 500 without `console.error` leaves nothing in `forge logs`.
 
 ## 7. Troubleshooting
 
