@@ -368,9 +368,14 @@ the permit signature survives the SQL round trip, and the chained ledger keeps f
 an intact chain. Gate latency measured on the installation: **p95 = 0.63 s** over 30 warm calls,
 100 % under one second, write path included (§3).
 
-**Not done yet.** The runtime half of two §18 validations — identity carried by an *external* MCP
-call (needs an administrator to enable external exposure plus an OAuth consent in a browser) and
-approver notification — the demo video, and the Devpost and Marketplace submissions. The
+**Approvers are notified on the ticket.** When the gate refuses an action and creates a request,
+the app posts the approval card of spec §8.1 (what / why / how / risk / who / approvers) as a Jira
+comment, verified live on ticket ENGS-32 (`src/services/notify.ts`). A delivery failure never
+changes the decision: the refusal stands, the failure is logged.
+
+**Not done yet.** The runtime half of one §18 validation — the identity carried by an *external*
+MCP call (needs an administrator to enable external exposure plus an OAuth consent in a browser) —
+the demo video, and the Devpost and Marketplace submissions. The
 Bitbucket merge gate (enforcement point 3 on pull requests) needs a companion app: an app
 installed on Jira cannot call the Bitbucket API (spec §18). What is delivered instead is the
 permit verification endpoint, which any CI step can call. The Jira screens return native-render
@@ -379,7 +384,7 @@ data rendered by a UI Kit 2 front-end (`src/frontend/main-ui-kit/`, one entry pe
 the bundle now provides. Token self-service is therefore available both from that screen and from
 the `create-hook-token` tool.
 
-Everything also runs offline: 320 unit tests, no network, no database, no Forge runtime.
+Everything also runs offline: 358 unit tests, no network, no database, no Forge runtime.
 
 ---
 
