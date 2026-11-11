@@ -312,8 +312,14 @@ Ready-to-use examples ship with the repository:
 - **Type check / lint**: `npm run lint` runs `tsc --noEmit` over `src/` and `test/`.
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) on **self-hosted runners**, with a **5-minute
   budget per job** (`timeout-minutes: 5`), `concurrency` to cancel superseded runs and
-  `fetch-depth: 1` to keep the checkout shallow. The native build is the default; no job timeout
-  is ever extended.
+  `fetch-depth: 1` to keep the checkout shallow. No job timeout is ever extended.
+- **Two install modes.** The UI Kit front-end (`react`, `@forge/react`, `@forge/bridge`) weighs
+  about **1.6 GB** installed, while the screens are plain `.jsx` that CI neither type-checks nor
+  runs — all decision logic lives in `src/core` and `src/ui`, typed and tested. Those packages are
+  therefore `optionalDependencies`:
+  - CI and local tests: `npm run install:ci` (`npm ci --omit=optional`) → **113 MB, ~10 s**;
+  - deploying: `npm run install:all` (`npm install`) first, because `forge deploy` bundles the
+    front-end and needs the UI Kit packages present.
 - **Conventions**: every source file stays under 500 lines and every function under 50 lines;
   shared helpers are extracted instead of duplicated.
 - The core logic in `src/core/` is deliberately free of `@forge/api` imports, so it can be unit

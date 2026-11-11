@@ -17,7 +17,13 @@ and is never printed, never committed.
 ```bash
 node --version                      # must satisfy the ranges above
 forge --version                     # 15.x
+npm run install:all                 # full install: the front-end bundle needs the UI Kit packages
 ```
+
+`npm run install:ci` (`npm ci --omit=optional`) is enough for tests and type checking, but
+`forge deploy` builds the UI Kit screens and needs `@forge/react`, `@forge/bridge` and `react`,
+which are declared as `optionalDependencies` (~1.6 GB installed) so that CI stays inside its
+5-minute budget.
 
 ## 2. Credentials
 

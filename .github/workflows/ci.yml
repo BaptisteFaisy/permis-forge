@@ -54,8 +54,15 @@ jobs:
       - name: Node (version du runner)
         run: node --version
 
+      # Le front-end UI Kit (react, @forge/react, @forge/bridge) pèse ~1,6 Go
+      # une fois installé : il est en optionalDependencies et la CI l'omet, car
+      # les écrans sont des .jsx ni typés ni testés ici — toute la logique de
+      # décision vit dans src/core et src/ui, qui sont typés et testés.
+      # Sans cela l'installation seule dépassait le budget de 5 minutes et
+      # saturait le disque des runners. Un déploiement Forge, lui, a besoin du
+      # front-end : `npm install` (ou `npm run install:all`) avant `forge deploy`.
       - name: Installation des dépendances
-        run: npm ci --prefer-offline --no-audit --no-fund
+        run: npm ci --omit=optional --prefer-offline --no-audit --no-fund
 
       - name: Typage (tsc --noEmit)
         run: npx tsc --noEmit
