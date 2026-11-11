@@ -12,6 +12,8 @@ import { consumePermitUse, isPermitActive, permitCovers } from '../core/permits'
 import { makeEntry } from '../core/ledger';
 import { maskSecrets } from '../core/mask';
 import { trustAdjustLevel } from '../core/trust';
+import { notifyApprovers } from '../services/notify';
+import { levelName } from '../core/catalog';
 import { getDefaultRepositories } from '../storage';
 import { AgentCallContext, Repositories } from '../core/types';
 
@@ -57,6 +59,14 @@ export function getRuntimeSync(): Runtime {
     maskSecrets,
     makeEntry,
     adjustLevel: trustAdjustLevel,
+    // Approvers are notified on the ticket (spec §8.1). Best effort: a failed
+    // comment never changes the decision.
+    notify: async (request, classification) => {
+      await notifyApprovers(request, {
+        levelName: levelName(request.level, 'en'),
+        reclassified: classification.reclassified ? classification.reason : undefined,
+      });
+    },
   });
   cached = { repos, engine, secret, now: () => new Date().toISOString() };
   return cached;
