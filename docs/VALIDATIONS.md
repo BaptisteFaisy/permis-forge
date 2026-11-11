@@ -363,14 +363,29 @@ account that Jira's native notification (bell + email, per the approver's own no
 settings) fires. Measure the delay between request creation and notification receipt on 10
 consecutive requests.
 
-**Status.** **To be done after deployment.** Nothing has been sent or measured yet: as of
-11 November 2026 the code contains **no Jira REST call** (no `requestJira` usage in `src/`) —
-the notification comment is part of the deployment-week work (spec §24, week of 25 Nov – 1 Dec,
-"Requests, approvals, permits, issue panel").
+**Status.** **Implemented and verified live (11 November 2026).** The comment is posted by the app
+itself; the *reception* half (a second account confirming the bell/email notification, and the
+delay over 10 requests) still needs two human accounts and is not claimed.
 
-**Result obtained.** None — no measurement exists. Expected mechanism (to confirm): a comment
-with user mentions triggers Jira's standard notification pipeline; the delay depends on the
-site's email/notification configuration, not on the app.
+**Result obtained.** On `one-atlas-cndz.atlassian.net`, app version 2.16.0: a gate call on ticket
+**ENGS-32** for `db/migrations/012_notify.sql` was refused, created request **RQ-2026-000026**, and
+the app published the approval card as a comment authored by **`permis-agir-mint`** — the six
+fields of spec §8.1 (what / why / how / risk / who / approvers) plus the reminder that the pilot
+cannot approve their own request. Comment count on the ticket went from 3 to 4 within about ten
+seconds of the refusal.
+
+Two defects were found and fixed on the way, both invisible offline:
+- the closing paragraph was pushed **inside** the `bulletList`, which only accepts `listItem`
+  nodes: Jira answered `400 INVALID_INPUT`. A structural invariant test now asserts that a
+  `bulletList` contains only `listItem` and that every leaf carries non-empty text;
+- the error kept only the HTTP code, which made the 400 undiagnosable — the Jira response body is
+  now included (bounded to 400 characters). That single change is what named the cause in one
+  round trip.
+
+Mechanism confirmed: a comment posted by the app through `asApp().requestJira()` lands on the
+ticket and enters Jira's standard notification pipeline. What remains unmeasured is the delay to
+an approver's inbox, which depends on the site's notification settings and needs a second
+account — the measurement procedure above stays valid for it.
 
 **Fallback (spec §18).** **Mention in an issue comment** — which is precisely the primary
 mechanism chosen here, the platform-native one; if mentions proved unreliable for
@@ -440,17 +455,19 @@ afford.
 
 ## Summary for the submission
 
-Four of the six points are now settled: the `mcp_tool` hook shape and the hooks of other clients
+Five of the six points are now settled: the `mcp_tool` hook shape and the hooks of other clients
 by documentation (with the `http` + `onFailure: "block"` design decision, and a command bridge
 for clients that lack HTTP hooks), the hash chain under concurrent writes by test (25 parallel
 writes, contiguous sequence numbers, chain verified), and the gate latency by measurement on the
 deployed installation (**p95 = 0.63 s** on 30 warm calls, 100 % under one second, write path
 included at 0.46 s). Section 7 adds a full end-to-end run on Forge SQL.
 
-Two points remain open and are honestly marked as such: the **identity carried by an external
-MCP call** (needs an administrator to enable external exposure and an OAuth consent in a
-browser — the code reads the identity from the context and never from the inputs, and the
-operator route computes the pilot flag from the stored request, so the design does not depend on
-the answer) and **approver notification** (needs a deployed app plus a notification channel;
-the fallback of spec §18 is a mention in a ticket comment). Neither blocks the submission, and
-each has a working fallback in the specification.
+The approver notification is implemented and verified live (the comment is posted by the app on a
+real ticket); only its reception delay by a second human account is still unmeasured.
+
+One point remains open and is honestly marked as such: the **identity carried by an external MCP
+call**. It needs an administrator to enable external exposure and an OAuth consent in a browser.
+The code reads the identity from the call context and never from the inputs, and the operator
+route computes the pilot flag from the stored request, so the design does not depend on the
+answer; the documented fallback of spec §18 (require the personal hook token on the MCP path too)
+is ready if the context turned out to be silent.
