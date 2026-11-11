@@ -195,6 +195,12 @@ function selectWinner(input: PolicyResolutionInput): Winner {
   if (projectWinner) {
     return { level: projectWinner.level, source: 'project-rule', rule: projectWinner, consideredRules };
   }
+  // No project rule applies. When an organisation rule covers the class and is
+  // at least as strict as the catalogue default, cite it: "no rule matched"
+  // would be wrong, and every refusal must name its rule (spec §19).
+  if (orgWinner && orgWinner.level <= base) {
+    return { level: orgWinner.level, source: 'org-floor', rule: orgWinner, consideredRules };
+  }
   return { level: base, source: 'class-default', consideredRules };
 }
 

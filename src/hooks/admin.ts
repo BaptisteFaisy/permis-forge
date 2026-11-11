@@ -20,6 +20,7 @@
  */
 import { timingSafeEqual } from 'crypto';
 import { approveRequest, createHookToken, denyRequest, revokePermit } from '../services/approvals-service';
+import { applySeed, planSeed } from '../services/seed-policy';
 import { verifyChain } from '../core/ledger';
 import { Repositories } from '../core/types';
 import { getRuntimeSync } from '../mcp/runtime';
@@ -146,12 +147,22 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
     return respond(outcome.ok ? 200 : 404, { ok: outcome.ok, permitId: body?.permitId });
   }
 
+  // Load a policy seed (zones + project rules). Guard rails live in the service:
+  // org scope refused, locked classes refused, nothing softer than the floor.
+  if (action === 'seed-policy') {
+    const seedProject = typeof body?.projectId === 'string' && body.projectId.length > 0 ? body.projectId : projectId;
+    const plan = await planSeed(repos, seedProject, body?.policy ?? {});
+    const result = await applySeed(repos, plan, String(body?.by ?? 'operator'));
+    return respond(200, { ...result, projectId: seedProject });
+  }
+
   return respond(400, {
     error: 'UNKNOWN_ACTION',
     allowed: [
       'status',
       'health',
       'bootstrap-schema',
+      'seed-policy',
       'mint-token',
       'approve-request',
       'deny-request',
