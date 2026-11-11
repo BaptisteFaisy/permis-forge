@@ -1,246 +1,270 @@
 # Manifeste Forge — « Permis d'agir » (permis-forge)
 #
-# Produit : une app Jira qui fait le registre des permissions des agents de
-# code. L'agent demande avant d'agir (outil MCP ou hook client), la politique
-# du projet décide, une approbation produit un permis signé et limité dans le
-# temps, et tout est consigné dans un journal chaîné, non réécrivable.
+# Produit : une app Jira qui tient le registre de ce qu'un agent de code a le
+# droit de faire. L'agent demande avant d'agir (outil MCP ou hook client), la
+# politique du projet décide, une approbation produit un permis signé et limité
+# dans le temps, et tout est consigné dans un journal chaîné, non réécrivable.
 #
-# Documentation des modules :
-# https://developer.atlassian.com/platform/forge/manifest-reference/modules/
+# Contraintes respectées ici (schéma officiel de la CLI Forge 15) :
+#   - les handlers de fonction sont relatifs à src/ (« index.x » pour src/index.ts) ;
+#   - une clé de fonction fait au plus 23 caractères ;
+#   - la description d'une action fait au plus 255 caractères ;
+#   - la section app exige id + runtime et n'accepte ni name ni version ;
+#   - un écran natif se déclare par « function: » (title/key obligatoires) ;
+#   - jira:personalSettingsPage exige une ressource statique (bundle UI) : il
+#     n'est donc pas déclaré ici, la génération du jeton personnel passe par la
+#     page projet (voir docs/DEPLOYMENT.md et docs/VALIDATIONS.md).
+#
+# Documentation : https://developer.atlassian.com/platform/forge/manifest-reference/modules/
 modules:
   # --------------------------------------------------------------- fonctions
   function:
     # Outils MCP (une fonction par outil)
     - key: check-permission-fn
-      handler: src/index.checkPermission
+      handler: index.checkPermission
     - key: get-policy-fn
-      handler: src/index.getPolicy
+      handler: index.getPolicy
     - key: request-approval-fn
-      handler: src/index.requestApproval
+      handler: index.requestApproval
     - key: get-request-status-fn
-      handler: src/index.getRequestStatus
+      handler: index.getRequestStatus
     - key: list-permits-fn
-      handler: src/index.listPermits
+      handler: index.listPermits
     - key: declare-action-fn
-      handler: src/index.declareAction
+      handler: index.declareAction
     - key: submit-plan-fn
-      handler: src/index.submitPlan
+      handler: index.submitPlan
     - key: get-agent-standing-fn
-      handler: src/index.getAgentStanding
+      handler: index.getAgentStanding
+    - key: create-hook-token-fn
+      handler: index.createToken
 
     # Écrans
-    - key: issue-panel-resolver
-      handler: src/index.resolveIssuePanel
-    - key: project-settings-resolver
-      handler: src/index.resolveProjectSettings
-    - key: project-page-resolver
-      handler: src/index.resolveProjectPage
-    - key: simulation-console-resolver
-      handler: src/index.resolveSimulationConsole
-    - key: global-page-resolver
-      handler: src/index.resolveGlobalPage
-    - key: personal-settings-resolver
-      handler: src/index.resolvePersonalSettings
+    - key: issue-panel-fn
+      handler: index.resolveIssuePanel
+    - key: project-settings-fn
+      handler: index.resolveProjectSettings
+    - key: project-page-fn
+      handler: index.resolveProjectPage
+    - key: global-page-fn
+      handler: index.resolveGlobalPage
 
-    # Point d'entrée du hook (webtrigger) et déclencheurs
+    # Point d'entrée du hook et déclencheurs
     - key: gate-fn
-      handler: src/index.handleGate
-    - key: issue-updated-trigger
-      handler: src/index.onIssueUpdated
-    - key: scheduled-maintenance-trigger
-      handler: src/index.onScheduledMaintenance
+      handler: index.handleGate
+    - key: admin-fn
+      handler: index.handleAdmin
+    - key: issue-updated-fn
+      handler: index.onIssueUpdated
+    - key: nightly-maintenance-fn
+      handler: index.onScheduledMaintenance
       # Expiration des permis, érosion du capital et vérification de la chaîne
       # sur tout le journal : la limite par défaut de 55 s est trop juste.
       timeoutSeconds: 300
 
   # ----------------------------------------------------------------- actions
   # Chaque action est un outil MCP. Les entrées sont limitées aux chaînes,
-  # entiers, nombres et booléens ; le compte rendu passe en Markdown.
+  # entiers, nombres et booléens ; l'identité vient du contexte, jamais des
+  # entrées (spec §16).
   action:
     - key: check-permission
       name: Check permission
       function: check-permission-fn
       actionVerb: GET
-      description: |
-        Décide si une action est autorisée, pour la classe et la cible annoncées.
-        La cible est reclassée si elle l'exige (un fichier sous migrations/ est
-        une migration, quelle que soit la classe annoncée). Renvoie la décision,
-        le niveau, la règle appliquée et la marche à suivre.
+      description: >-
+        Decide whether an action is allowed. The target is reclassified when it
+        must be (a file under migrations/ is a schema migration whatever was
+        announced). Returns the decision, the level, the rule applied and the
+        next step.
       inputs:
         issueKey:
           title: Issue key
           type: string
           required: false
-          description: "Clé du ticket Jira, par exemple PAY-123. Obligatoire pour toute action au-delà de N4."
+          description: "Jira issue key, e.g. PAY-123. Required for any action beyond N4."
         actionClass:
           title: Action class
           type: string
           required: false
-          description: "Classe annoncée par l'agent, par exemple A-02. Elle n'est jamais crue sur parole."
+          description: "Class announced by the agent, e.g. A-02. Never trusted blindly."
         target:
           title: Target
           type: string
           required: true
-          description: "Cible exacte : chemin de fichier, nom de table, commande ou description."
+          description: "Exact target: file path, table name, command or description."
         description:
           title: Description
           type: string
           required: false
-          description: "Description libre de l'action, en cas de cible mal chiffrée."
+          description: "Free description of the action, used when the target is vague."
         command:
           title: Command
           type: string
           required: false
-          description: "Texte brut de la commande, si l'action est un appel shell."
+          description: "Raw command text when the action is a shell call."
 
     - key: get-policy
       name: Get policy
       function: get-policy-fn
       actionVerb: GET
-      description: |
-        Renvoie la politique applicable du projet : classes d'action, zones,
-        règles en vigueur, niveaux effectifs et règles de l'organisation qui
-        font plancher. Sert à planifier avant d'agir.
+      description: >-
+        Return the policy in force for a project: action classes, zones, rules,
+        organisation floor and emergency stop state. Use it to plan before
+        acting.
       inputs:
         projectKey:
           title: Project key
           type: string
           required: false
-          description: "Clé du projet Jira, par exemple PAY. Par défaut, le projet du ticket."
+          description: "Jira project key, e.g. PAY. Defaults to the ticket's project."
 
     - key: request-approval
       name: Request approval
       function: request-approval-fn
       actionVerb: CREATE
-      description: |
-        Crée une demande d'approbation visible sur le ticket, avec la classe, la
-        cible, la justification et le plan. Renvoie le numéro de demande et les
-        approbateurs sollicités. N'attends pas en boucle : annonce le numéro et
-        reprends quand le pilote te relance.
+      description: >-
+        Create an approval request on the ticket with class, target,
+        justification and plan. Returns the request number and the approver
+        roles. Do not poll: announce the number and wait for the pilot.
       inputs:
         issueKey:
           title: Issue key
           type: string
           required: true
-          description: "Clé du ticket Jira, par exemple PAY-123."
+          description: "Jira issue key, e.g. PAY-123."
         actionClass:
           title: Action class
           type: string
           required: true
-          description: "Classe d'action, par exemple A-08."
+          description: "Action class, e.g. A-08."
         target:
           title: Target
           type: string
           required: true
-          description: "Cible exacte de l'action proposée."
+          description: "Exact target of the proposed action."
         justification:
           title: Justification
           type: string
           required: false
-          description: "Pourquoi cette action est nécessaire, en une ou deux phrases."
+          description: "Why this action is needed, in one or two sentences."
         plan:
           title: Plan
           type: string
           required: false
-          description: "Plan d'exécution, avec le retour arrière s'il existe."
+          description: "Execution plan, including the rollback plan if any."
 
     - key: get-request-status
       name: Get request status
       function: get-request-status-fn
       actionVerb: GET
-      description: |
-        État d'une demande d'approbation : en attente, accordée avec un permis,
-        refusée avec son motif, ou gelée par un arrêt d'urgence.
+      description: >-
+        State of an approval request: pending, granted with its permit, denied
+        with the reason, or frozen by the emergency stop.
       inputs:
         requestId:
           title: Request id
           type: string
           required: true
-          description: "Numéro de demande, par exemple RQ-2026-000417."
+          description: "Request number, e.g. RQ-2026-000417."
 
     - key: list-permits
       name: List permits
       function: list-permits-fn
       actionVerb: GET
-      description: |
-        Permis valides sur un ticket : portée, expiration, usages restants et
-        signature. Les permis expirés ou révoqués sont renvoyés separately.
+      description: >-
+        Permits covering a ticket: scope, expiry, remaining uses and signature.
+        Expired, revoked or suspended permits are reported as unusable.
       inputs:
         issueKey:
           title: Issue key
           type: string
           required: true
-          description: "Clé du ticket Jira, par exemple PAY-123."
+          description: "Jira issue key, e.g. PAY-123."
 
     - key: declare-action
       name: Declare action
       function: declare-action-fn
       actionVerb: CREATE
-      description: |
-        Déclare une action exécutée : classe, cible, résultat et permis utilisé.
-        Écrit une entrée dans le journal chaîné. Toute action sensible non
-        déclarée est signalée et coûte du capital de confiance.
+      description: >-
+        Declare an executed action: class, target, outcome and permit used.
+        Writes an entry to the chained ledger. Sensitive actions that are not
+        declared are detected later and cost trust capital.
       inputs:
         issueKey:
           title: Issue key
           type: string
           required: true
-          description: "Clé du ticket Jira, par exemple PAY-123."
+          description: "Jira issue key, e.g. PAY-123."
         actionClass:
           title: Action class
           type: string
           required: true
-          description: "Classe de l'action exécutée, par exemple A-08."
+          description: "Class of the executed action, e.g. A-08."
         target:
           title: Target
           type: string
           required: true
-          description: "Cible exacte de l'action exécutée."
+          description: "Exact target of the executed action. No secrets."
         outcome:
           title: Outcome
           type: string
           required: true
-          description: "Ce qui s'est passé, en une phrase. Ne mets ni secret ni valeur sensible."
+          description: "What happened, in one sentence. No secret values."
         permitId:
           title: Permit id
           type: string
           required: false
-          description: "Permis utilisé, par exemple PA-2026-000417."
+          description: "Permit used, e.g. PA-2026-000417."
 
     - key: submit-plan
       name: Submit plan
       function: submit-plan-fn
       actionVerb: CREATE
-      description: |
-        Soumet le plan entier d'un ticket complexe. L'app le découpe en actions,
-        rend une décision pour chacune et regroupe en une seule demande ce qui
-        demande une approbation. Un plan approuvé vaut lot de permis.
+      description: >-
+        Submit the whole plan of a complex ticket. It is split into actions,
+        each one gets a decision, and everything needing approval is grouped
+        into a single request. An approved plan is worth a batch of permits.
       inputs:
         issueKey:
           title: Issue key
           type: string
           required: true
-          description: "Clé du ticket Jira, par exemple PAY-123."
+          description: "Jira issue key, e.g. PAY-123."
         plan:
           title: Plan
           type: string
           required: true
-          description: "Plan, au format JSON (liste d'actions) ou en puces Markdown."
+          description: "Plan as JSON (array of actions) or as Markdown bullets."
+
+    - key: create-hook-token
+      name: Create hook token
+      function: create-hook-token-fn
+      actionVerb: CREATE
+      description: >-
+        Mint the personal hook token of the calling account, for the Claude Code
+        PreToolUse gate. The token is returned once; only its hash is stored. It
+        identifies the pilot and grants no right by itself.
+      inputs:
+        label:
+          title: Label
+          type: string
+          required: false
+          description: "Optional label, e.g. the machine name."
 
     - key: get-agent-standing
       name: Get agent standing
       function: get-agent-standing-fn
       actionVerb: GET
-      description: |
-        Capital de confiance d'un profil d'agent : score, statut et effets en
-        cours sur les niveaux d'autonomie. Le capital n'ouvre jamais une classe
-        interdite, double approbation ou approbation d'un tiers.
+      description: >-
+        Trust capital of an agent profile: score, status and current effects on
+        autonomy levels. Capital never opens a forbidden, dual-approval or
+        third-party-approval class.
       inputs:
         agentProfile:
           title: Agent profile
           type: string
           required: true
-          description: "Identifiant du profil d'agent, par exemple claude-code-paiements."
+          description: "Agent profile id, e.g. claude-code-payments."
 
   # --------------------------------------------------------------- serveur MCP
   rovo:mcp:
@@ -252,13 +276,14 @@ modules:
         - request-approval
         - get-request-status
         - list-permits
+        - create-hook-token
         - declare-action
         - submit-plan
         - get-agent-standing
 
   # ------------------------------------------------------------------- skill
-  # Le nom et la description de la skill vivent dans son SKILL.md (frontmatter),
-  # le module n'accepte que key / source / dependencies.
+  # Le nom et la description de la skill vivent dans le frontmatter de son
+  # SKILL.md ; le module n'accepte que key / source / dependencies.
   rovo:skill:
     - key: permis-skill
       source:
@@ -270,6 +295,7 @@ modules:
           - request-approval
           - get-request-status
           - list-permits
+          - create-hook-token
           - declare-action
           - submit-plan
           - get-agent-standing
@@ -279,8 +305,8 @@ modules:
     - key: permis-agent
       name: Permis d'agir
       description: >
-        Répond aux questions des humains sur ce que les agents ont le droit de
-        faire, ce qu'ils ont fait et pourquoi une demande a été refusée.
+        Answers human questions about what agents may do, what they did, and why
+        a request was refused.
       prompt: |
         Tu es l'assistant « Permis d'agir ». Tu expliques le registre des
         permissions des agents de code d'un projet Jira.
@@ -315,58 +341,53 @@ modules:
 
   # --------------------------------------------------------------- webtrigger
   # Point d'entrée du hook client (PreToolUse) et de la vérification en CI.
-  # Aucune authentification plateforme : le jeton personnel du hook identifie
-  # le pilote ; l'absence de réponse doit bloquer l'action (onFailure: block).
+  # Aucune authentification plateforme : le jeton personnel du hook identifie le
+  # pilote ; l'absence de réponse doit bloquer l'action (onFailure: block).
   webtrigger:
     - key: gate
       function: gate-fn
       urlFormat: v2
       response:
         type: dynamic
+    # Point d'entrée opérateur (amorçage, démo, révocation) : URL distincte et
+    # secret d'installation obligatoire. Voir docs/DEPLOYMENT.md.
+    - key: admin
+      function: admin-fn
+      urlFormat: v2
+      response:
+        type: dynamic
 
   # ------------------------------------------------------------------- écrans
+  # Rendu natif : chaque module pointe directement vers sa fonction.
   jira:issuePanel:
     - key: permis-issue-panel
-      resolver:
-        function: issue-panel-resolver
-      render: native
+      function: issue-panel-fn
       title: Permis d'agir
       icon: https://raw.githubusercontent.com/BaptisteFaisy/permis-forge/main/static/icon.svg
 
   jira:projectSettingsPage:
     - key: permis-project-settings
-      resolver:
-        function: project-settings-resolver
-      render: native
+      function: project-settings-fn
       title: Permis d'agir
       layout: native
 
+  # Un seul module jira:projectPage est autorisé par app : la console de
+  # simulation (spec §15.4) est un résolveur de cette page, pas un écran séparé.
   jira:projectPage:
     - key: permis-project-page
-      resolver:
-        function: project-page-resolver
-      render: native
-      title: Permis d'agir
+      function: project-page-fn
+      title: Activité des agents
       layout: native
 
   jira:globalPage:
     - key: permis-global-page
-      resolver:
-        function: global-page-resolver
-      render: native
-      title: Permis d'agir
-
-  jira:personalSettingsPage:
-    - key: permis-personal-settings
-      resolver:
-        function: personal-settings-resolver
-      render: native
+      function: global-page-fn
       title: Permis d'agir
 
   # ----------------------------------------------------------------- triggers
   trigger:
     - key: issue-updated
-      function: issue-updated-trigger
+      function: issue-updated-fn
       events:
         - avi:jira:updated:issue
       filter:
@@ -376,7 +397,7 @@ modules:
   # chaîne du journal (spec §16).
   scheduledTrigger:
     - key: nightly-maintenance
-      function: scheduled-maintenance-trigger
+      function: nightly-maintenance-fn
       interval: day
 
   # ----------------------------------------------------------------- stockage
@@ -385,8 +406,8 @@ modules:
       engine: mysql
 
   # ---------------------------------------------------------------------- llm
-  # Classement des descriptions libres : en cas de doute entre deux classes,
-  # la plus restrictive est retenue.
+  # Classement des descriptions libres : en cas de doute entre deux classes, la
+  # plus restrictive est retenue.
   llm:
     - key: main-llm
       model:
@@ -399,13 +420,12 @@ permissions:
     - read:jira-user
 
 app:
-  id: ari:cloud:ecosystem::app/f3969b6e-1878-4104-b8ae-d192da754939
-  name: Permis d'agir
+  id: ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341
   description: >-
-    Jira devient le registre de ce qu'un agent de code a le droit de faire :
-    politique par projet, approbation sur le ticket, permis signé et limité
-    dans le temps, journal chaîné.
-  version:
-    major: 1
-    minor: 0
-    patch: 0
+    Jira becomes the registry of what a coding agent is allowed to do: policy
+    per project, approval on the ticket, signed time-boxed permits and a
+    tamper-evident chained ledger.
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64

@@ -123,6 +123,82 @@ curl -sS -X POST "$GATE_URL" \
 Expect a `deny` with a request id: the door is closed by default, and a
 destructive git operation is class A-12 (forbidden).
 
+## 6b. This installation, as deployed on 11 November 2026
+
+The app is live; these are the real values, so anyone picking the project up can resume without
+guessing. The secrets themselves stay out of the repository.
+
+| Item | Value |
+|---|---|
+| App id | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
+| Developer Space | `laddition` (`abf72fff-edaf-4259-900c-743702f0d1f2`) |
+| Site | `one-atlas-cndz.atlassian.net` (Jira) |
+| Environment | `development`, version 2.2.0 |
+| Installation id | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
+| Gate URL | `https://<installation>.webtrigger.atlassian.app/public/<gate-key>` — stored locally in `~/.atlassian/permis-gate-url.txt`, mode 600 |
+| Operator URL | same host, separate key — `~/.atlassian/permis-admin-url.txt` |
+| Signing secret | app variable `PERMIS_AGENT_SECRET`, encrypted; local copy in `~/.atlassian/permis-signing-secret` |
+| CLI credentials | `FORGE_EMAIL` + `FORGE_API_TOKEN` (no keychain on this host, so the CLI uses environment variables) |
+
+Commands actually used:
+
+```bash
+export FORGE_EMAIL=…                      # Atlassian account email
+export FORGE_API_TOKEN="$(tr -d '\r\n' < ~/.atlassian-api-token)"
+export PATH=~/tools/node-v26.12.1-linux-x64/bin:$PATH   # Node >= 26.12.1 for the CLI
+
+forge developer-spaces list
+forge create permis-agir-mint -t blank -d app -y -s <developer-space-id>   # mints the real app id
+forge lint
+forge variables set PERMIS_AGENT_SECRET "$(cat ~/.atlassian/permis-signing-secret)" --encrypt -e development
+forge deploy --non-interactive
+forge install --site one-atlas-cndz.atlassian.net --product jira --environment development --non-interactive
+forge webtrigger create -f gate  -s one-atlas-cndz.atlassian.net -p jira
+forge webtrigger create -f admin -s one-atlas-cndz.atlassian.net -p jira
+forge logs -e development -n 40
+```
+
+### The operator entry point
+
+`src/hooks/admin.ts` is a **second** web trigger, separate from the gate, for bootstrapping and
+demonstrating an installation before any screen is reachable. It accepts five operations:
+`status`, `mint-token`, `approve-request`, `deny-request`, `revoke-permit`.
+
+Every call must present the installation secret in `X-Permis-Admin`; the comparison is
+constant-time and a wrong secret is refused with 401. Approvals still go through
+`src/services/approvals-service.ts`, so the pilot of a request cannot approve it and a denial
+still requires a written reason. The endpoint cannot write policy rules: there is no operation
+for that, so it cannot be used to widen anyone's rights.
+
+Treat it as an operator surface: keep the URL and the secret private, rotate the secret if
+either leaks, and consider removing the module from the manifest for a production listing — the
+screens are the intended route for everyday use.
+
+```bash
+curl -sS -X POST "$ADMIN_URL" -H 'Content-Type: application/json' \
+  -H "X-Permis-Admin: $(cat ~/.atlassian/permis-signing-secret)" \
+  -d '{"action":"status","projectId":"PAY"}'
+```
+
+### What the first deploy taught us
+
+Two defects only a real deployment could reveal, both fixed:
+
+1. **Web trigger wire format.** Forge passes a plain object `{method, headers, body, path,
+   userPath}` where `body` is a string and each header value is an **array**; the function must
+   return `{statusCode, headers, body}`. Using the Fetch `Request`/`Response` API instead makes
+   the platform answer **HTTP 424 Failed Dependency** with no useful message. `src/hooks/gate.ts`
+   now speaks the Forge format and still accepts a Fetch `Request` so the tests run offline.
+2. **Runtime detection.** There is no `FORGE_ENVIRONMENT` variable; Forge exposes app variables
+   as `FORGE_USER_VAR_*`. The adapter selection now defaults to Forge SQL, with jest workers and
+   the offline demo opting out explicitly (`PERMIS_OFFLINE=1`, `PERMIS_STORAGE=memory|sql`).
+   Without that fix a deployed app would have run on the in-memory adapter and lost every
+   decision between invocations.
+
+Also worth knowing: the first call to a fresh container creates the ten tables and seeds the
+organisation floor rules (idempotent), which cost **15.4 s** once; warm calls answer in
+**0.4 s** (see `docs/VALIDATIONS.md` §3).
+
 ## 7. Troubleshooting
 
 | Symptom | Cause | Fix |

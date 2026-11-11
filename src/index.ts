@@ -25,6 +25,7 @@ export {
   getAgentStanding,
 } from './mcp/handlers/reads';
 export { requestApproval, declareAction, submitPlan } from './mcp/handlers/writes';
+export { createToken } from './mcp/handlers/token';
 
 // ------------------------------------------------------------------- écrans
 const runtime = getRuntimeSync();
@@ -48,4 +49,5 @@ export const resolvePersonalSettings = resolverDefinitions;
 
 // ------------------------------------------------------- hook et déclencheurs
 export { handleGate } from './hooks/gate';
+export { handleAdmin } from './hooks/admin';
 export { onIssueUpdated, onScheduledMaintenance } from './triggers';

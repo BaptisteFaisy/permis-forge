@@ -1,11 +1,9 @@
 /**
- * Forge SQL adapter for the storage ports of `src/core/types.ts`.
+ * Forge SQL repositories: one factory per storage port of `src/core/types.ts`.
  *
- * Any client exposing `execute(query, params)`, the Forge SDK shape
- * `prepare(query).bindParams(...params).execute()`, or `executeRaw(query)`
- * works. Column <-> type mapping lives in `./schema` (the read side of the
- * schema); this module only builds and runs queries. The Forge SDK is loaded
- * lazily, so importing this module outside a Forge runtime never crashes.
+ * Connection, schema bootstrap and query helpers live in `./sql-client`; the
+ * column <-> type mapping lives in `./schema`. This file only translates
+ * between domain objects and rows.
  */
 import { ApprovalRequest, LedgerEntry, LedgerFilter, Repositories } from '../core/types';
 import { killSwitchKey } from './memory';
@@ -13,128 +11,10 @@ import {
   DbRow, dbJson, dbNumber, hookTokenFromRow, killSwitchFromRow, ledgerEntryFromRow, permitFromRow,
   profileFromRow, requestFromRow, ruleFromRow, trustEventFromRow, trustStateFromRow, zoneFromRow,
 } from './schema';
-
-type Params = unknown[];
-type SqlRunner = (query: string, params: Params) => Promise<DbRow[]>;
-/** One `WHERE` fragment plus its bound value (skipped when undefined). */
-interface Clause {
-  sql: string;
-  value?: unknown;
-}
-
-// ------------------------------------------------------------------- client
-
-const nowIso = (): string => new Date().toISOString();
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
-/** Extract the row array from any supported client response shape. */
-function toRows(result: unknown): DbRow[] {
-  if (!result || typeof result !== 'object') return [];
-  const candidate = result as { rows?: unknown; updateQueryResponse?: { rows?: unknown } };
-  const rows = candidate.rows ?? candidate.updateQueryResponse?.rows;
-  return Array.isArray(rows) ? (rows as DbRow[]) : [];
-}
-
-/** Build a runner around any supported SQL client. */
-function createRunner(client: any): SqlRunner {
-  if (client && typeof client.execute === 'function') {
-    return async (query, params) => toRows(await client.execute(query, params));
-  }
-  if (client && typeof client.prepare === 'function') {
-    return async (query, params) => {
-      const statement = client.prepare(query);
-      const bound = typeof statement?.bindParams === 'function'
-        ? statement.bindParams(...params)
-        : statement;
-      return toRows(await bound.execute(params));
-    };
-  }
-  if (client && typeof client.executeRaw === 'function') {
-    return async (query) => toRows(await client.executeRaw(query));
-  }
-  throw new Error('Unsupported SQL client: expected execute(), prepare() or executeRaw().');
-}
-
-/** Load the Forge SQL client lazily: a missing SDK must not crash the import. */
-function loadForgeSqlClient(): any {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const forgeSql = require('@forge/sql');
-    return forgeSql?.sql ?? forgeSql?.default?.sql;
-  } catch {
-    return undefined;
-  }
-}
-
-// -------------------------------------------------------------------- SQL db
-
-/** Thin wrapper: error translation plus generic insert / upsert builders. */
-class SqlDb {
-  constructor(private readonly runner: SqlRunner) {}
-
-  async rows(query: string, params: Params = []): Promise<DbRow[]> {
-    try {
-      return await this.runner(query, params);
-    } catch (error) {
-      throw new Error(`[forge-sql] ${errorMessage(error)} :: ${query}`);
-    }
-  }
-
-  async one<T>(query: string, params: Params, map: (row: DbRow) => T): Promise<T | undefined> {
-    const rows = await this.rows(query, params);
-    return rows.length > 0 ? map(rows[0]) : undefined;
-  }
-
-  async all<T>(query: string, params: Params, map: (row: DbRow) => T): Promise<T[]> {
-    return (await this.rows(query, params)).map(map);
-  }
-
-  /** Plain INSERT — append-only tables (ledger, trust_event). */
-  async insert(table: string, data: DbRow): Promise<void> {
-    const columns = Object.keys(data);
-    await this.rows(
-      `INSERT INTO \`${table}\` (${columns.map((c) => `\`${c}\``).join(', ')}) ` +
-        `VALUES (${columns.map(() => '?').join(', ')})`,
-      columns.map((column) => data[column]),
-    );
-  }
-
-  /**
-   * INSERT ... ON DUPLICATE KEY UPDATE. Columns listed in `keys` (primary key)
-   * and in `insertOnly` (written once: created_at, or the trust columns of a
-   * profile) are never refreshed on conflict.
-   */
-  async upsert(table: string, data: DbRow, keys = ['id'], insertOnly: string[] = []): Promise<void> {
-    const columns = Object.keys(data);
-    const skip = new Set([...keys, ...insertOnly]);
-    const updated = columns.filter((column) => !skip.has(column));
-    await this.rows(
-      `INSERT INTO \`${table}\` (${columns.map((c) => `\`${c}\``).join(', ')}) ` +
-        `VALUES (${columns.map(() => '?').join(', ')}) ON DUPLICATE KEY UPDATE ` +
-        updated.map((column) => `\`${column}\` = ?`).join(', '),
-      [...columns.map((c) => data[c]), ...updated.map((c) => data[c])],
-    );
-  }
-}
-
-/** Join fragments into ` WHERE a = ? AND b = ?`, skipping undefined values. */
-function where(clauses: Clause[], keyword = 'WHERE'): { sql: string; params: Params } {
-  const kept = clauses.filter((clause) => clause.value !== undefined && clause.value !== '');
-  return {
-    sql: kept.length === 0 ? '' : ` ${keyword} ${kept.map((clause) => clause.sql).join(' AND ')}`,
-    params: kept.map((clause) => clause.value),
-  };
-}
-
-/** Sequence for "PA-<year>-nnnnnn" / "RQ-<year>-nnnnnn": rows so far, plus one. */
-async function countSequence(db: SqlDb, table: string, idPrefix: string): Promise<number> {
-  const rows = await db.rows(`SELECT COUNT(*) AS \`c\` FROM \`${table}\` WHERE \`id\` LIKE ?`, [
-    `${idPrefix}-%`,
-  ]);
-  return (rows.length > 0 ? dbNumber(rows[0].c) : 0) + 1;
-}
+import {
+  Clause, Params, SqlDb, countSequence, createDdlRunner, createRunner, loadForgeSqlClient,
+  nowIso, where,
+} from './sql-client';
 
 // ------------------------------------------------------------- repositories
 
@@ -453,7 +333,7 @@ export function createSqlRepositories(sqlClient?: any): Repositories {
   if (!client) {
     throw new Error('No SQL client available: pass one explicitly or run inside Forge.');
   }
-  const db = new SqlDb(createRunner(client));
+  const db = new SqlDb(createRunner(client), createDdlRunner(client));
   return {
     policies: createSqlPolicies(db),
     zones: createSqlZones(db),

@@ -46,7 +46,7 @@ describe('manifest guard', () => {
   }, 60_000);
 
   it('rejects a handler that does not exist', () => {
-    const run = runGuard((manifest) => manifest.replace('src/index.checkPermission', 'src/index.nope'));
+    const run = runGuard((manifest) => manifest.replace('index.checkPermission', 'index.nope'));
     expect(run.status).toBe(1);
     expect(run.output).toContain("n'est pas exporté");
   }, 60_000);
@@ -84,7 +84,7 @@ describe('manifest guard', () => {
 
   it('rejects an input without a description', () => {
     const run = runGuard((manifest) =>
-      manifest.replace('          description: "Clé du ticket Jira, par exemple PAY-123."\n', ''),
+      manifest.replace('          description: "Jira issue key, e.g. PAY-123. Required for any action beyond N4."\n', ''),
     );
     expect(run.status).toBe(1);
     expect(run.output).toContain('sans description');
@@ -113,6 +113,36 @@ describe('manifest guard', () => {
     const run = runGuard((manifest) => manifest.replace('    - key: get-policy\n', '    - key: check-permission\n'));
     expect(run.status).toBe(1);
     expect(run.output).toContain('dupliqué');
+  }, 60_000);
+
+  it('rejects a missing app.runtime', () => {
+    const run = runGuard((manifest) => manifest.replace('  runtime:\n    name: nodejs24.x\n', ''));
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('app.runtime.name absent');
+  }, 60_000);
+
+  it('rejects an app.version, which the Forge schema does not accept', () => {
+    const run = runGuard((manifest) =>
+      manifest.replace('  runtime:\n', '  version:\n    major: 1\n  runtime:\n'),
+    );
+    expect(run.status).toBe(1);
+    expect(run.output).toContain("app.version n'est pas accepté");
+  }, 60_000);
+
+  it('rejects a function key longer than 23 characters', () => {
+    const run = runGuard((manifest) =>
+      manifest.replace('    - key: gate-fn\n', '    - key: gate-fn-beaucoup-trop-long\n'),
+    );
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('clé de fonction trop longue');
+  }, 60_000);
+
+  it('rejects an action description longer than 255 characters', () => {
+    const run = runGuard((manifest) =>
+      manifest.replace('        Decide whether an action is allowed.', `        ${'x'.repeat(260)}`),
+    );
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('> 255');
   }, 60_000);
 
   it('rejects a sql engine other than mysql', () => {

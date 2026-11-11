@@ -24,7 +24,10 @@ export const DEFAULT_PROFILE_ID = 'default';
  * development — it must be replaced before any real deployment.
  */
 export function resolveSigningSecret(): string {
-  const secret = process.env.PERMIS_AGENT_SECRET;
+  // Forge exposes app variables as FORGE_USER_VAR_<NAME>; the plain name is
+  // kept for local runs and tests.
+  const secret =
+    process.env.FORGE_USER_VAR_PERMIS_AGENT_SECRET ?? process.env.PERMIS_AGENT_SECRET;
   if (secret && secret.length > 0) return secret;
   return 'dev-insecure-secret-change-me';
 }

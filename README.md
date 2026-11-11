@@ -172,7 +172,7 @@ slowly back towards 50 when there is no activity. Every variation is explained i
 
 ---
 
-## The eight MCP tools
+## The nine MCP tools
 
 Exposed by the `rovo:mcp` module (`tools:` in `manifest.yml`).
 
@@ -185,6 +185,7 @@ Exposed by the `rovo:mcp` module (`tools:` in `manifest.yml`).
 | `list-permits` | GET | `issueKey` | Valid permits and remaining usages |
 | `declare-action` | CREATE | `issueKey`, `actionClass`, `target`, `outcome`, `permitId` | Ledger entry |
 | `submit-plan` | CREATE | `issueKey`, `plan` | Decision per action, grouped request |
+| `create-hook-token` | CREATE | `label` | The caller's personal gate token, shown once (only its hash is stored) |
 | `get-agent-standing` | GET | `agentProfile` | Trust capital and current effects |
 
 An agent waiting for an approval does **not** poll `get-request-status`: its instructions tell it
@@ -352,14 +353,25 @@ acceptance scenarios of §21 run end to end with `node scripts/demo.mjs`.
 | PA-21 | Propose a policy from the history | C | **Implemented** — `src/services/policy-suggestions.ts`: evidence-backed proposals, observe before hardening, never a locked class, never above the org floor |
 | PA-22 | Delegation: a sub-agent receives a narrower permit than its parent | C | **Implemented** — `src/services/delegation.ts`: any widening refused with an explicit code, and the whole chain verifiable |
 
-**Not done yet.** Deploying to a live Jira site (needs an Atlassian account and site), the
-runtime half of the §18 validations — external MCP identity, web trigger latency under load,
+**Deployed and validated live.** The app runs on Jira: `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341`,
+installed on `one-atlas-cndz.atlassian.net` (development, version 2.2.0). A full end-to-end run
+through the real web trigger and Forge SQL is transcribed in `docs/VALIDATIONS.md` §7: a
+migration is refused and creates request `RQ-2026-000001`, a third party approves it, permit
+`PA-2026-000001` is issued, the gate lets the action through once, refuses the second attempt,
+the permit signature survives the SQL round trip, and the chained ledger keeps five entries with
+an intact chain. Gate latency measured on the installation: **p95 = 0.63 s** over 30 warm calls,
+100 % under one second, write path included (§3).
+
+**Not done yet.** The runtime half of two §18 validations — identity carried by an *external* MCP
+call (needs an administrator to enable external exposure plus an OAuth consent in a browser) and
 approver notification — the demo video, and the Devpost and Marketplace submissions. The
 Bitbucket merge gate (enforcement point 3 on pull requests) needs a companion app: an app
 installed on Jira cannot call the Bitbucket API (spec §18). What is delivered instead is the
-permit verification endpoint, which any CI step can call.
+permit verification endpoint, which any CI step can call. The Jira screens return native-render
+data; `jira:personalSettingsPage` is not declared because the platform requires a static UI
+bundle for it, so token self-service goes through the `create-hook-token` tool.
 
-Everything runs offline: 289 unit tests, no network, no database, no Forge runtime.
+Everything also runs offline: 320 unit tests, no network, no database, no Forge runtime.
 
 ---
 

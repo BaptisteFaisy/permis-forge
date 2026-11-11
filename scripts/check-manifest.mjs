@@ -79,10 +79,14 @@ for (const [key, handler] of functions) {
   const lastDot = handler.lastIndexOf('.');
   const file = handler.slice(0, lastDot);
   const symbol = handler.slice(lastDot + 1);
-  const candidates = ['.ts', '.tsx', '.js'].map((ext) => path.join(ROOT, `${file}${ext}`));
+  // Forge résout les handlers depuis src/ (« index.x » → src/index.ts) ; on
+  // accepte aussi un chemin explicite pour ne pas casser un manifeste ancien.
+  const candidates = ['src', '.'].flatMap((base) =>
+    ['.ts', '.tsx', '.js'].map((ext) => path.join(ROOT, base, `${file}${ext}`)),
+  );
   const filePath = candidates.find((candidate) => fs.existsSync(candidate));
   if (!filePath) {
-    fail(`handler ${key} : fichier absent ${file}.ts`);
+    fail(`handler ${key} : fichier absent (cherché src/${file}.ts et ${file}.ts)`);
     continue;
   }
   const source = fs.readFileSync(filePath, 'utf8');
@@ -139,6 +143,28 @@ if (fs.existsSync(toolsPath)) {
 
 if (!manifest.app?.id) fail('app.id absent du manifeste');
 if (!manifest.permissions?.scopes?.length) fail('permissions.scopes absent du manifeste');
+
+// app : id + runtime obligatoires, et ni name ni version (additionalProperties
+// est fermé dans le schéma officiel de la CLI Forge 15).
+if (!manifest.app?.runtime?.name) fail('app.runtime.name absent du manifeste');
+for (const forbidden of ['name', 'version']) {
+  if (manifest.app?.[forbidden] !== undefined) {
+    fail(`app.${forbidden} n'est pas accepté par le schéma Forge (le retirer)`);
+  }
+}
+
+// Une clé de fonction fait au plus 23 caractères.
+for (const [key] of functions) {
+  if (key.length > 23) fail(`clé de fonction trop longue (${key.length} > 23) : ${key}`);
+}
+
+// La description d'une action fait au plus 255 caractères.
+for (const action of actions) {
+  const description = String(action.description ?? '');
+  if (description.length > 255) {
+    fail(`action ${action.key} : description de ${description.length} caractères (> 255)`);
+  }
+}
 
 // ---------------------------------------------------------------- schémas officiels
 // Règles relevées dans la référence du manifeste Forge (vérifiées le 11/11/2026) :
