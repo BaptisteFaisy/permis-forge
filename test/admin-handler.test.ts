@@ -82,6 +82,19 @@ describe('handleAdmin operations', () => {
     expect(payload.chainValid).toBe(true);
   });
 
+  it('probes every table and reports the ones that answer', async () => {
+    const { statusCode, payload } = await call({ action: 'health', projectId: PROJECT });
+
+    expect(statusCode).toBe(200);
+    expect(payload.projectId).toBe(PROJECT);
+    const tables = Object.keys(payload.tables).sort();
+    expect(tables).toEqual([
+      'agent_profile', 'hook_token', 'kill_switch', 'ledger', 'permit',
+      'policy_rule', 'request', 'trust_state', 'zone',
+    ]);
+    for (const table of tables) expect(payload.tables[table]).toBe('ok');
+  });
+
   it('mints a personal token once and stores only its hash', async () => {
     const { statusCode, payload } = await call({
       action: 'mint-token',

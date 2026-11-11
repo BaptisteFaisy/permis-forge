@@ -180,6 +180,25 @@ No HTTP 429 was observed at this volume (30-60 sequential calls). The platform f
 as documented: web trigger functions stop after **55 s**, Forge SQL allows **150 DML requests
 per second per install**, **5 s per SELECT** and **10 s per INSERT/UPDATE/DELETE**.
 
+**Second sample (version 2.4.0, after a redeploy).** 30 warm calls: min 0.338 s, median
+0.435 s, **p95 0.696 s**, max 0.919 s, mean 0.465 s, **30/30 under 1 s**; write path 0.491 s.
+The two independent samples agree, so the figure is not a fluke of one container.
+
+The 12-call run made immediately after that redeploy is worth reporting too, because it shows
+the warm-up cost: min 0.314 s, median 0.448 s, **p95 1.224 s**, 10/12 under 1 s. The first calls
+to a new container are slower; the target is met once the container is warm.
+
+**Transient platform limit observed.** During one burst of rapid calls the gate answered
+`{"error":"GATE_FAILURE","detail":"Limits for the current installation have been exceeded"}`
+while the operator endpoint kept answering normally. It did not recur afterwards, and the health
+probe below shows every table readable. It is recorded here rather than hidden: the gate fails
+**closed** in that case (HTTP 500 → the hook blocks the action), which is the intended behaviour,
+and the mitigation is the same as for cold starts — filter client-side so the gate is only called
+for genuinely sensitive tools. A per-container diagnostic exists for it:
+`POST {admin} {"action":"health","projectId":"PAY"}` probes each of the nine tables
+individually and returned `ok` for all of them on 11 November 2026 (policy_rule, zone, permit,
+ledger, request, kill_switch, agent_profile, trust_state, hook_token).
+
 **Interpretation.** The target of spec §19 (< 1 s on 95 % of hook calls) is met on warm
 containers, including on the write path. The residual risk is the cold start, which is a
 platform property, not a code property: the mitigation is client-side filtering (matcher +

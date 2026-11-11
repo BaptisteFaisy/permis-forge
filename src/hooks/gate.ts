@@ -188,6 +188,8 @@ export async function handleGate(input: WebTriggerRequest | Request | any): Prom
     return await decisionMode(header, body, toHookEvent(body), stored.accountId);
   } catch (error) {
     // Fail closed: a 5xx makes the client block the action (onFailure: block).
+    // Logged as well, so `forge logs` shows why the door stayed shut.
+    console.error('[permis-gate] failure:', error);
     return respond(500, { error: 'GATE_FAILURE', detail: errorMessage(error) }, 'Internal error');
   }
 }
