@@ -86,6 +86,51 @@ describe('policy resolution', () => {
     expect(res.consideredRules).toEqual(['org-a02-n2', 'proj-a02-n4']);
   });
 
+  it('cites the organisation rule even when it equals the class default', () => {
+    const orgRule: PolicyRule = {
+      id: 'org-default-A-10',
+      scope: 'org',
+      actionClass: 'A-10',
+      level: 0,
+      mode: 'enforce',
+    };
+    const res = resolvePolicy(
+      makeInput({
+        rules: [orgRule],
+        context: makeContext({
+          classification: { actionClass: 'A-10', reclassified: false, confidence: 'deterministic' },
+        }),
+      }),
+    );
+
+    expect(res.level).toBe(0);
+    expect(res.source).toBe('org-floor');
+    expect(res.rule?.id).toBe('org-default-A-10');
+    expect(res.reason).toContain('org-default-A-10');
+    expect(res.reason).not.toContain('No rule matched');
+  });
+
+  it('falls back to the class default when an org rule is more permissive', () => {
+    const orgRule: PolicyRule = {
+      id: 'org-loose',
+      scope: 'org',
+      actionClass: 'A-10',
+      level: 4,
+      mode: 'enforce',
+    };
+    const res = resolvePolicy(
+      makeInput({
+        rules: [orgRule],
+        context: makeContext({
+          classification: { actionClass: 'A-10', reclassified: false, confidence: 'deterministic' },
+        }),
+      }),
+    );
+
+    expect(res.level).toBe(0);
+    expect(res.source).toBe('class-default');
+  });
+
   it('picks the most restrictive project rule and breaks ties deterministically', () => {
     const zone: Zone = {
       id: 'z-core',
