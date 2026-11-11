@@ -446,6 +446,28 @@ create the schema explicitly with `{"action":"bootstrap-schema"}`. After the fix
 gated calls on a data-deletion command all answered correctly (deny + a new request each time),
 with no 429.
 
+### 7b. The six Jira screens against Forge SQL (version 2.17.0)
+
+The resolvers were unit-tested against the in-memory adapter, and the UI Kit front-end was
+deployed, but nothing had proved the full path — resolver → **Forge SQL adapter** → payload —
+including the row mappers written for the SQL layer (JSON columns for conditions, path patterns
+and permit scopes). The read-only operator action `screen` exists for exactly that: it renders a
+named screen and returns the payload a user would see, without a browser and without writing
+anything (`personalSettings` is forced to `action: list`, so it cannot mint a token by accident).
+
+| Screen | Observed on the live installation (project PAY) |
+|---|---|
+| `projectSettings` | `catalog=15`, `rules=14`, `zones=7`, `lang=en`, kill-switch labels present |
+| `projectPage` | `stats.totalEntries=44`, `entries=25` (paginated), observation report present |
+| `issuePanel` | `pendingRequests=22`, `grant`/`deny`/`clarify` action labels present |
+| `globalPage` | `orgRules=5`, `floorByClass` populated |
+| `personalSettings` | `tokens=0` for the operator — confirms the read-only contract |
+| `simulationConsole` | `decision=deny`, `level=N2` for `db/migrations/020_screen.sql` announced as A-02 (reclassified) |
+
+All six returned their expected shape with no SQL error, which exercises `ruleFromRow`,
+`zoneFromRow`, `ledgerEntryFromRow`, `requestFromRow`, `permitFromRow` and `killSwitchFromRow`
+against real rows. This was the last surface that had only ever run offline.
+
 Two lessons worth keeping: a `catch` that answers cleanly without logging makes a platform error
 undiagnosable — the gate now logs before answering; and "it worked once, then failed" on a
 serverless platform usually means a per-container cost that the first container happened to
