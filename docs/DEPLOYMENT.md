@@ -168,8 +168,8 @@ forge logs -e development -n 40
 
 `src/hooks/admin.ts` is a **second** web trigger, separate from the gate, for bootstrapping and
 demonstrating an installation before any screen is reachable. It accepts five operations:
-`status`, `health`, `bootstrap-schema`, `mint-token`, `approve-request`, `deny-request` and
-`revoke-permit`.
+`status`, `health`, `bootstrap-schema`, `seed-policy`, `screen`, `mint-token`,
+`approve-request`, `deny-request` and `revoke-permit`.
 
 Every call must present the installation secret in `X-Permis-Admin`; the comparison is
 constant-time and a wrong secret is refused with 401. Approvals still go through

@@ -25,6 +25,7 @@ import { verifyChain } from '../core/ledger';
 import { Repositories } from '../core/types';
 import { getRuntimeSync } from '../mcp/runtime';
 import { ensureSchema } from '../storage';
+import { callResolver, createResolvers } from '../ui/resolvers';
 import { WebTriggerRequest, WebTriggerResponse } from './gate';
 
 const ADMIN_HEADER = 'x-permis-admin';
@@ -147,6 +148,12 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
     return respond(outcome.ok ? 200 : 404, { ok: outcome.ok, permitId: body?.permitId });
   }
 
+  // Read-only view of a Jira screen, so the screen data path can be checked
+  // against the real Forge SQL backend without opening a browser.
+  if (action === 'screen') {
+    return renderScreen(repos, body);
+  }
+
   // Load a policy seed (zones + project rules). Guard rails live in the service:
   // org scope refused, locked classes refused, nothing softer than the floor.
   if (action === 'seed-policy') {
@@ -163,6 +170,7 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
       'health',
       'bootstrap-schema',
       'seed-policy',
+      'screen',
       'mint-token',
       'approve-request',
       'deny-request',
@@ -198,6 +206,48 @@ async function approveOrDeny(
     expiresAt: outcome.permit?.expiresAt,
     usesLeft: outcome.permit?.usesLeft,
   });
+}
+
+/** Screens an operator may render; all of them are read-only. */
+const RENDERABLE_SCREENS = [
+  'issuePanel',
+  'projectSettings',
+  'projectPage',
+  'simulationConsole',
+  'globalPage',
+  'personalSettings',
+] as const;
+
+/**
+ * Render one Jira screen and return its payload.
+ *
+ * Read-only by construction: the screens only read repositories, and the
+ * personal-settings screen is called with `action: 'list'` so it never mints a
+ * token as a side effect. This exists so the screen data path can be verified
+ * against the real Forge SQL backend without a browser.
+ */
+async function renderScreen(repos: Repositories, body: any): Promise<WebTriggerResponse> {
+  const screen = String(body?.screen ?? '');
+  if (!RENDERABLE_SCREENS.includes(screen as (typeof RENDERABLE_SCREENS)[number])) {
+    return respond(400, { error: 'UNKNOWN_SCREEN', allowed: [...RENDERABLE_SCREENS] });
+  }
+  const runtime = getRuntimeSync();
+  const resolver = createResolvers({ repos, engine: runtime.engine, verifyChain });
+  const projectId = typeof body?.projectId === 'string' ? body.projectId : 'unknown';
+  const issueKey = typeof body?.issueKey === 'string' ? body.issueKey : undefined;
+  const payload = {
+    ...(typeof body?.payload === 'object' && body.payload !== null ? body.payload : {}),
+    projectId,
+    ...(issueKey ? { issueKey } : {}),
+    // Never mint a token as a side effect of a read-only inspection.
+    ...(screen === 'personalSettings' ? { action: 'list' } : {}),
+  };
+  const context = {
+    accountId: typeof body?.accountId === 'string' ? body.accountId : 'operator',
+    extension: { project: { key: projectId }, ...(issueKey ? { issue: { key: issueKey } } : {}) },
+  };
+  const result = await callResolver(resolver, screen, { payload, context });
+  return respond(200, { screen, result });
 }
 
 /** Entry point of the operator web trigger. */

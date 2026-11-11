@@ -26,6 +26,11 @@ async function call(body: unknown, secret: string | null = SECRET) {
   return { statusCode: response.statusCode, payload: JSON.parse(response.body) };
 }
 
+/** Repositories of the current test (reset in beforeEach). */
+function repos0() {
+  return getDefaultRepositories();
+}
+
 async function pendingRequest(id: string, pilot = 'pilot-1'): Promise<ApprovalRequest> {
   const repos = getDefaultRepositories();
   const entry: ApprovalRequest = {
@@ -181,6 +186,49 @@ describe('handleAdmin operations', () => {
       reason: 'Not this sprint',
     });
     expect(denied.payload.status).toBe('denied');
+  });
+
+  it('renders a read-only screen through the operator route', async () => {
+    await repos0().policies.upsertRule({
+      id: 'r1', scope: 'project', projectId: PROJECT, actionClass: 'A-08', level: 1, mode: 'enforce',
+    });
+
+    const { statusCode, payload } = await call({ action: 'screen', screen: 'projectSettings', projectId: PROJECT });
+
+    expect(statusCode).toBe(200);
+    expect(payload.screen).toBe('projectSettings');
+    expect(payload.result.catalog).toHaveLength(15);
+    expect(payload.result.rules[0].id).toBe('r1');
+  });
+
+  it('renders the issue panel for one ticket', async () => {
+    await pendingRequest('RQ-2026-000077');
+
+    const { payload } = await call({
+      action: 'screen',
+      screen: 'issuePanel',
+      projectId: PROJECT,
+      issueKey: 'PAY-1',
+    });
+
+    expect(payload.result.issueKey).toBe('PAY-1');
+    expect(payload.result.pendingRequests).toHaveLength(1);
+    expect(payload.result.actions.grant).toBeTruthy();
+  });
+
+  it('never mints a token when rendering the personal settings screen', async () => {
+    const { payload } = await call({ action: 'screen', screen: 'personalSettings', projectId: PROJECT });
+
+    expect(payload.result.token).toBeUndefined();
+    expect(payload.result.tokens).toEqual([]);
+    expect(payload.result.notice).toContain('hash');
+  });
+
+  it('refuses an unknown screen name', async () => {
+    const { statusCode, payload } = await call({ action: 'screen', screen: 'deleteEverything' });
+    expect(statusCode).toBe(400);
+    expect(payload.error).toBe('UNKNOWN_SCREEN');
+    expect(payload.allowed).toContain('projectPage');
   });
 
   it('reports an unknown request as not found', async () => {
