@@ -49,6 +49,9 @@ modules:
       handler: src/index.onIssueUpdated
     - key: scheduled-maintenance-trigger
       handler: src/index.onScheduledMaintenance
+      # Expiration des permis, érosion du capital et vérification de la chaîne
+      # sur tout le journal : la limite par défaut de 55 s est trop juste.
+      timeoutSeconds: 300
 
   # ----------------------------------------------------------------- actions
   # Chaque action est un outil MCP. Les entrées sont limitées aux chaînes,
@@ -254,12 +257,10 @@ modules:
         - get-agent-standing
 
   # ------------------------------------------------------------------- skill
+  # Le nom et la description de la skill vivent dans son SKILL.md (frontmatter),
+  # le module n'accepte que key / source / dependencies.
   rovo:skill:
     - key: permis-skill
-      name: Permis d'agir
-      description: >
-        Consignes d'usage des outils de permission : demander avant d'agir,
-        annoncer le numéro de demande, déclarer après.
       source:
         dir: skills/permis-skill
       dependencies:

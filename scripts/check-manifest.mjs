@@ -140,6 +140,124 @@ if (fs.existsSync(toolsPath)) {
 if (!manifest.app?.id) fail('app.id absent du manifeste');
 if (!manifest.permissions?.scopes?.length) fail('permissions.scopes absent du manifeste');
 
+// ---------------------------------------------------------------- schémas officiels
+// Règles relevées dans la référence du manifeste Forge (vérifiées le 11/11/2026) :
+// elles sont encodées ici pour que la CI les fasse respecter sans CLI Forge.
+
+// action : name, function, actionVerb, description et inputs sont obligatoires,
+// et chaque entrée exige title, type, required et description.
+const VERBS = ['GET', 'CREATE', 'UPDATE', 'DELETE', 'TRIGGER'];
+for (const action of actions) {
+  for (const field of ['name', 'function', 'actionVerb', 'description', 'inputs']) {
+    if (action[field] === undefined) fail(`action ${action.key} : champ obligatoire ${field} absent`);
+  }
+  if (!VERBS.includes(action.actionVerb)) {
+    fail(`action ${action.key} : actionVerb invalide ${action.actionVerb}`);
+  }
+  const inputs = action.inputs ?? {};
+  if (Object.keys(inputs).length === 0) fail(`action ${action.key} : aucune entrée déclarée`);
+  for (const [inputName, input] of Object.entries(inputs)) {
+    for (const field of ['title', 'type', 'required', 'description']) {
+      if (input[field] === undefined) {
+        fail(`action ${action.key} : entrée ${inputName} sans ${field}`);
+      }
+    }
+    if (typeof input.required !== 'boolean') {
+      fail(`action ${action.key} : entrée ${inputName} — required doit être un booléen`);
+    }
+  }
+}
+
+// rovo:skill : key, source.dir et dependencies.tools uniquement.
+for (const skill of modules['rovo:skill'] ?? []) {
+  const allowed = ['key', 'source', 'dependencies'];
+  for (const prop of Object.keys(skill)) {
+    if (!allowed.includes(prop)) fail(`rovo:skill ${skill.key} : propriété non prévue ${prop}`);
+  }
+  if (!skill.source?.dir) fail(`rovo:skill ${skill.key} : source.dir absent`);
+  const tools = skill.dependencies?.tools ?? [];
+  for (const tool of tools) {
+    if (!actionKeys.includes(tool)) fail(`rovo:skill ${skill.key} : outil inconnu ${tool}`);
+  }
+  if (new Set(tools).size !== tools.length) fail(`rovo:skill ${skill.key} : outils en double`);
+}
+
+// rovo:agent : nom de 30 caractères au plus, prompt obligatoire.
+for (const agent of modules['rovo:agent'] ?? []) {
+  if (!agent.name) fail(`rovo:agent ${agent.key} : name absent`);
+  else if (agent.name.length > 30) fail(`rovo:agent ${agent.key} : name > 30 caractères`);
+  if (!agent.prompt) fail(`rovo:agent ${agent.key} : prompt absent`);
+  for (const skillKey of agent.skills ?? []) {
+    const known = (modules['rovo:skill'] ?? []).map((skill) => skill.key);
+    if (!known.includes(skillKey)) fail(`rovo:agent ${agent.key} : skill inconnue ${skillKey}`);
+  }
+}
+
+// scheduledTrigger : intervalles autorisés.
+for (const trigger of modules.scheduledTrigger ?? []) {
+  const intervals = ['fiveMinute', 'hour', 'day', 'week'];
+  if (!intervals.includes(trigger.interval)) {
+    fail(`scheduledTrigger ${trigger.key} : interval invalide ${trigger.interval}`);
+  }
+}
+if ((modules.scheduledTrigger ?? []).length > 5) fail('plus de 5 scheduledTrigger déclarés');
+
+// webtrigger : urlFormat et type de réponse.
+for (const trigger of modules.webtrigger ?? []) {
+  if (trigger.urlFormat && !['v1', 'v2'].includes(trigger.urlFormat)) {
+    fail(`webtrigger ${trigger.key} : urlFormat invalide ${trigger.urlFormat}`);
+  }
+  const type = trigger.response?.type;
+  if (type && !['static', 'dynamic'].includes(type)) {
+    fail(`webtrigger ${trigger.key} : response.type invalide ${type}`);
+  }
+  if (type === 'static' && !(trigger.response?.outputs ?? []).length) {
+    fail(`webtrigger ${trigger.key} : response static sans outputs`);
+  }
+}
+
+// sql : un seul module, engine mysql (seule valeur supportée).
+const sqlModules = modules.sql ?? [];
+if (sqlModules.length > 1) fail('plusieurs modules sql déclarés (un seul par app)');
+for (const sql of sqlModules) {
+  if (sql.engine !== 'mysql') fail(`sql ${sql.key} : engine doit valoir mysql`);
+}
+
+// SKILL.md : frontmatter conforme et cohérent avec le manifeste.
+for (const skill of modules['rovo:skill'] ?? []) {
+  const dir = skill.source?.dir;
+  if (!dir) continue;
+  const skillFile = path.join(ROOT, dir, 'SKILL.md');
+  if (!fs.existsSync(skillFile)) {
+    fail(`rovo:skill ${skill.key} : SKILL.md absent de ${dir}`);
+    continue;
+  }
+  const source = fs.readFileSync(skillFile, 'utf8');
+  const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
+  if (!frontmatter) {
+    fail(`rovo:skill ${skill.key} : frontmatter YAML absent de SKILL.md`);
+    continue;
+  }
+  const name = /^\s*name:\s*(.+)$/m.exec(frontmatter[1])?.[1].trim();
+  const expectedName = path.basename(dir);
+  if (name !== expectedName) {
+    fail(`rovo:skill ${skill.key} : name "${name}" ≠ dossier "${expectedName}"`);
+  }
+  if (name && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+    fail(`rovo:skill ${skill.key} : name invalide (minuscules, chiffres, tirets simples)`);
+  }
+  const description = /^\s*description:\s*(.+)$/m.exec(frontmatter[1])?.[1].trim() ?? '';
+  if (description.length < 50) fail(`rovo:skill ${skill.key} : description trop courte (< 50)`);
+  const allowedTools = (/^\s*allowed-tools:\s*(.+)$/m.exec(frontmatter[1])?.[1] ?? '').trim().split(/\s+/);
+  for (const tool of skill.dependencies?.tools ?? []) {
+    if (!allowedTools.includes(tool)) {
+      fail(`rovo:skill ${skill.key} : allowed-tools n'inclut pas ${tool}`);
+    }
+  }
+  const body = source.slice(frontmatter[0].length);
+  if (body.split('\n').length > 500) fail(`rovo:skill ${skill.key} : corps de SKILL.md > 500 lignes`);
+}
+
 for (const warning of warnings) console.warn(`::warning::${warning}`);
 if (errors.length > 0) {
   for (const error of errors) console.error(`::error::${error}`);
