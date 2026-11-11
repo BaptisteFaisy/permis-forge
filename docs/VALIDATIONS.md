@@ -37,7 +37,29 @@ from the inputs".
 external exposure, connect a client, call `check-permission`, and log the context received by
 the function (the `accountId` it carries) for two different authorising users.
 
-**Status.** **Verified in documentation; runtime confirmation to be done after deployment.**
+**Status.** **Endpoint probed on the deployed app (11 November 2026); the identity itself still
+needs an OAuth consent in a browser.**
+
+Probe against this installation (`appId = a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341`):
+
+| Call | Answer | Reading |
+|---|---|---|
+| `GET https://mcp.atlassian.com/forge/<appId>` | `404 Not Found` | the bare URL serves nothing without a session |
+| `POST` the same URL with a JSON-RPC `initialize` | `401 {"error":"invalid_token"}` | **the MCP endpoint exists for this app and demands an OAuth 2.1 bearer token** |
+
+So the route is live and authenticated at the platform level, exactly as documented: an external
+client must complete an OAuth 2.1 consent, and the tool then runs with the rights of the user who
+authorised it. What the probe cannot establish — and what therefore remains open — is the
+`accountId` the action receives in its Forge context once that consent is given. That needs a
+browser (an administrator enabling external exposure for the installation, then a client
+connecting).
+
+The design does not depend on the answer: `src/mcp/runtime.ts` reads the account id from the call
+context and never from the payload, and the operator route computes `isPilot` by comparing the
+request's stored pilot with the approver, so a caller cannot claim to be someone else. If the
+context turned out not to carry an identity, the documented fallback of spec §18 applies: require
+the personal hook token on the MCP path too.
+
 What the documentation already establishes:
 
 - the Rovo MCP reference: external clients connect to `https://mcp.atlassian.com/forge/<appId>`
