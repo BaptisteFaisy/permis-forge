@@ -39,6 +39,8 @@ export interface PipelineDeps {
   maskSecrets: (text: string) => string;
   makeEntry: (input: LedgerEntryInput, prev?: LedgerEntry) => LedgerEntry;
   adjustLevel?: (level: AutonomyLevel, score: number, actionClass: string) => AutonomyLevel;
+  /** Best-effort approver notification (spec §8.1, §18 validation 6). */
+  notify?: (request: ApprovalRequest, classification: Classification) => Promise<void>;
   settings?: ProjectSettings;
   now?: () => string;
 }
@@ -194,6 +196,15 @@ async function applyPermitOrRequest(
   }
   if (resolution.observeOnly) return { hasValidPermit: false };
   const request = await createRequest(deps, action, caller, classification, resolution, state, at);
+  // A request nobody sees never gets answered (spec §18, validation 6). Best
+  // effort: a failed comment must not change the refusal already decided.
+  if (deps.notify && request.status === 'pending') {
+    try {
+      await deps.notify(request, classification);
+    } catch (error) {
+      console.error('[permis-pipeline] notification failed:', error);
+    }
+  }
   return { hasValidPermit: false, requestId: request.id };
 }
 
