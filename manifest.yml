@@ -48,6 +48,8 @@ modules:
       handler: index.resolveProjectPage
     - key: global-page-fn
       handler: index.resolveGlobalPage
+    - key: personal-settings-fn
+      handler: index.resolvePersonalSettings
 
     # Point d'entrée du hook et déclencheurs
     - key: gate-fn
@@ -359,29 +361,54 @@ modules:
 
   # ------------------------------------------------------------------- écrans
   # Rendu natif : chaque module pointe directement vers sa fonction.
+  # Écrans UI Kit 2 : une ressource partagée, une entrée par écran, et le
+  # résolveur qui fournit les données déjà localisées (spec §19).
   jira:issuePanel:
     - key: permis-issue-panel
-      function: issue-panel-fn
+      resource: main-ui-kit/issuePanel
+      resolver:
+        function: issue-panel-fn
+      render: native
       title: Permis d'agir
       icon: https://raw.githubusercontent.com/BaptisteFaisy/permis-forge/main/static/icon.svg
 
   jira:projectSettingsPage:
     - key: permis-project-settings
-      function: project-settings-fn
+      resource: main-ui-kit/projectSettings
+      resolver:
+        function: project-settings-fn
+      render: native
       title: Permis d'agir
       layout: native
 
   # Un seul module jira:projectPage est autorisé par app : la console de
-  # simulation (spec §15.4) est un résolveur de cette page, pas un écran séparé.
+  # simulation (spec §15.4) et la vérification de la chaîne (§15.6) vivent dans
+  # cette page, pas dans des écrans séparés.
   jira:projectPage:
     - key: permis-project-page
-      function: project-page-fn
+      resource: main-ui-kit/projectPage
+      resolver:
+        function: project-page-fn
+      render: native
       title: Activité des agents
       layout: native
 
   jira:globalPage:
     - key: permis-global-page
-      function: global-page-fn
+      resource: main-ui-kit/globalPage
+      resolver:
+        function: global-page-fn
+      render: native
+      title: Permis d'agir
+
+  # Génération du jeton personnel du hook (spec §16) : ce module exige une
+  # ressource statique, désormais fournie par le bundle UI Kit.
+  jira:personalSettingsPage:
+    - key: permis-personal-settings
+      resource: main-ui-kit/personalSettings
+      resolver:
+        function: personal-settings-fn
+      render: native
       title: Permis d'agir
 
   # ----------------------------------------------------------------- triggers
@@ -412,6 +439,16 @@ modules:
     - key: main-llm
       model:
         - claude
+
+resources:
+  - key: main-ui-kit
+    path: src/frontend/main-ui-kit
+    entry:
+      issuePanel: issue-panel.jsx
+      projectSettings: project-settings.jsx
+      projectPage: project-page.jsx
+      globalPage: global-page.jsx
+      personalSettings: personal-settings.jsx
 
 permissions:
   scopes:

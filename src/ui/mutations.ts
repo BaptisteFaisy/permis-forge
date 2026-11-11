@@ -56,11 +56,20 @@ export async function handleToggleKillSwitch(deps: ResolverDeps, payload: any, c
   const reason = typeof payload?.reason === 'string' ? payload.reason.trim() : '';
   const by = accountIdOf(context);
   if (!reason) return { ok: false, error: 'REASON_REQUIRED' };
-  const current = await deps.repos.killSwitches.get('project', projectId);
+  // One brake per project, one for the whole organisation (spec §12).
+  const scope: 'org' | 'project' = payload?.scope === 'org' ? 'org' : 'project';
+  const current = await deps.repos.killSwitches.get(scope, scope === 'org' ? undefined : projectId);
   if (!activate && payload?.requireDifferentPerson !== false && current?.active && current.by === by) {
     return { ok: false, error: 'DIFFERENT_PERSON_REQUIRED' };
   }
-  const killSwitch = { scope: 'project' as const, projectId, active: activate, by, reason, at: new Date().toISOString() };
+  const killSwitch = {
+    scope,
+    projectId: scope === 'org' ? undefined : projectId,
+    active: activate,
+    by,
+    reason,
+    at: new Date().toISOString(),
+  };
   await deps.repos.killSwitches.save(killSwitch);
   return { ok: true, killSwitch };
 }

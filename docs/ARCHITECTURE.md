@@ -12,7 +12,7 @@ trigger used by the client hook.
 ## 1. Forge modules
 
 The manifest follows the sketch of §16; it is validated with `forge lint` before each deployment.
-The eight MCP tools are declared once and reused by three modules — the `action` module (one
+The nine MCP tools are declared once and reused by three modules — the `action` module (one
 entry per tool, one Forge function each), the `rovo:mcp` server and the `rovo:skill` that tells
 the agent how to use them:
 
@@ -116,7 +116,7 @@ without a Forge runtime.
 | `src/core/` | Pure TypeScript: action-class catalogue, glob matching, approvals, kill switch, trust capital, plan-first evaluation, hook mapping, permits and ledger model | No | Present |
 | `src/storage/` | Repository adapters over `@forge/sql` (`schema.ts` defines the ten tables), plus an in-memory adapter (`memory.ts`) used by the tests | Yes (`@forge/sql`) | Schema and in-memory adapter present |
 | `src/ui/` | Forge resolvers: issue panel, project settings page, project page, global page, personal settings page, simulation console | Yes (`@forge/resolver`) | In progress |
-| `src/mcp/` | Tool definitions, runtime wiring and the handlers of the eight MCP tools (5 reads, 3 writes) | Yes | Present |
+| `src/mcp/` | Tool definitions, runtime wiring and the handlers of the nine MCP tools (6 reads, 3 writes) | Yes | Present |
 | `src/hooks/` | The `webtrigger` gate handler: reads the personal token, maps the hook event, answers *allow* / *ask* / *deny* | Yes | Present |
 | `src/triggers.ts` | Issue-update trigger and nightly maintenance (permit expiry, trust erosion, chain verification) | Yes | Present |
 | `src/index.ts` | Entry point: every handler referenced by `manifest.yml`, re-exported thin | Yes | Present |

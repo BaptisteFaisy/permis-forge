@@ -80,7 +80,7 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 | **Marketplace** | Yes | A single Forge app installed on Jira, no external service to run; free during the hackathon. The draft listing — including the permissions justification, the privacy statement and the honest egress declaration — is in [`MARKETPLACE.md`](MARKETPLACE.md). |
 | **Teamwork Graph (optional)** | Not claimed for v1 | No Teamwork Graph module is declared in `manifest.yml` at submission time. It is kept as an optional future integration (surfacing permits and agent profiles as graph entities); we do not claim the bonus for something that is not built. |
 
-## The eight MCP tools
+## The nine MCP tools
 
 | Tool | What it is for |
 |---|---|
@@ -91,6 +91,7 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 | `list-permits` | Valid permits on a ticket with remaining usages and expiry. |
 | `declare-action` | Declare an executed action and write its ledger entry. |
 | `submit-plan` | Submit a whole plan; get a decision per action and one grouped approval request. |
+| `create-hook-token` | Mint the caller's personal gate token; shown once, only its hash is stored. |
 | `get-agent-standing` | Trust capital of an agent profile and its current effects on autonomy. |
 
 ---
