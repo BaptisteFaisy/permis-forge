@@ -17,7 +17,7 @@
 
 ## Short description (one paragraph, listing summary)
 
-Permis d'agir makes Jira the permission registry for coding agents. Every sensitive action an agent attempts is classified (15 action classes), resolved against your project policy (6 autonomy levels), and either allowed, sent to a human approval on the ticket, or refused with the rule that fired. Approvals mint signed, time-boxed, single-usage permits; every decision lands in a SHA-256 hash-chained ledger that cannot be rewritten. A Claude Code `PreToolUse` hook enforces the policy on the workstation — closed by default — and eight MCP tools serve any MCP-compatible client.
+Permis d'agir makes Jira the permission registry for coding agents. Every sensitive action an agent attempts is classified (15 action classes), resolved against your project policy (6 autonomy levels), and either allowed, sent to a human approval on the ticket, or refused with the rule that fired. Approvals mint signed, time-boxed, single-usage permits; every decision lands in a SHA-256 hash-chained ledger that cannot be rewritten. A Claude Code `PreToolUse` hook enforces the policy on the workstation — closed by default — and nine MCP tools serve any MCP-compatible client.
 
 ## Long description
 

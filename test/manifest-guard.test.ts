@@ -145,6 +145,28 @@ describe('manifest guard', () => {
     expect(run.output).toContain('> 255');
   }, 60_000);
 
+  it('rejects a screen resolver pointing at an undeclared function', () => {
+    const run = runGuard((manifest) => manifest.replace('        function: issue-panel-fn', '        function: nope-fn'));
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('resolver.function inconnue');
+  }, 60_000);
+
+  it('rejects a screen resource that is not declared', () => {
+    const run = runGuard((manifest) =>
+      manifest.replace('      resource: main-ui-kit/issuePanel', '      resource: autre-kit/issuePanel'),
+    );
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('ressource autre-kit non déclarée');
+  }, 60_000);
+
+  it('rejects a resource entry whose file is missing', () => {
+    const run = runGuard((manifest) =>
+      manifest.replace('      issuePanel: issue-panel.jsx', '      issuePanel: absent.jsx'),
+    );
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('entrée issuePanel introuvable');
+  }, 60_000);
+
   it('rejects a sql engine other than mysql', () => {
     const run = runGuard((manifest) => manifest.replace('      engine: mysql', '      engine: postgres'));
     expect(run.status).toBe(1);

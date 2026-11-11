@@ -216,7 +216,7 @@ Point 2 is the main one: see [`docs/HOOK-SETUP.md`](docs/HOOK-SETUP.md).
 | `src/core/` | Pure TypeScript decision logic — no Atlassian SDK import. Action-class catalogue, path matching, approvals, kill switch, trust capital, plan-first evaluation, hook mapping. | Present |
 | `src/storage/` | Persistence adapters over Forge SQL (`@forge/sql`), plus an in-memory adapter used by the tests. | Schema and in-memory adapter present |
 | `src/ui/` | Forge resolvers for the issue panel, project settings page, project page, global page, personal settings page and the simulation console. | In progress |
-| `src/mcp/` | Handlers for the eight MCP tools of the `rovo:mcp` module. | Present (5 read tools, 3 write tools) |
+| `src/mcp/` | Handlers for the nine MCP tools of the `rovo:mcp` module. | Present (6 read tools, 3 write tools) |
 | `src/hooks/` | The `webtrigger` gate handler used by the client hook and by CI verification. | Present |
 | `src/triggers.ts` | Issue-update trigger and nightly maintenance (permit expiry, trust erosion, chain verification). | Present |
 | `src/index.ts` | Entry point: wires repositories, services and module handlers together. | Present |
@@ -368,8 +368,10 @@ approver notification — the demo video, and the Devpost and Marketplace submis
 Bitbucket merge gate (enforcement point 3 on pull requests) needs a companion app: an app
 installed on Jira cannot call the Bitbucket API (spec §18). What is delivered instead is the
 permit verification endpoint, which any CI step can call. The Jira screens return native-render
-data; `jira:personalSettingsPage` is not declared because the platform requires a static UI
-bundle for it, so token self-service goes through the `create-hook-token` tool.
+data rendered by a UI Kit 2 front-end (`src/frontend/main-ui-kit/`, one entry per screen), and
+`jira:personalSettingsPage` is declared — the platform requires a static UI bundle for it, which
+the bundle now provides. Token self-service is therefore available both from that screen and from
+the `create-hook-token` tool.
 
 Everything also runs offline: 320 unit tests, no network, no database, no Forge runtime.
 

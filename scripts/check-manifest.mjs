@@ -284,6 +284,41 @@ for (const skill of modules['rovo:skill'] ?? []) {
   if (body.split('\n').length > 500) fail(`rovo:skill ${skill.key} : corps de SKILL.md > 500 lignes`);
 }
 
+// Écrans : chaque resolver.function doit désigner une fonction déclarée.
+const SCREEN_MODULES = [
+  'jira:issuePanel',
+  'jira:projectSettingsPage',
+  'jira:projectPage',
+  'jira:globalPage',
+  'jira:personalSettingsPage',
+];
+for (const type of SCREEN_MODULES) {
+  for (const module of modules[type] ?? []) {
+    const fn = module.resolver?.function;
+    if (fn && !functions.has(fn)) fail(`${type} ${module.key} : resolver.function inconnue ${fn}`);
+    if (module.resource) {
+      const [resourceKey] = String(module.resource).split('/');
+      const declared = (manifest.resources ?? []).map((resource) => resource.key);
+      if (!declared.includes(resourceKey)) {
+        fail(`${type} ${module.key} : ressource ${resourceKey} non déclarée dans resources`);
+      }
+    }
+  }
+}
+
+// resources : chaque entrée pointée par un écran doit exister.
+for (const resource of manifest.resources ?? []) {
+  if (!resource.key || !resource.path) fail(`resources : entrée sans key ou sans path`);
+  if (!fs.existsSync(path.join(ROOT, resource.path))) {
+    fail(`resources ${resource.key} : dossier absent ${resource.path}`);
+  }
+  for (const [name, file] of Object.entries(resource.entry ?? {})) {
+    if (!fs.existsSync(path.join(ROOT, resource.path, String(file)))) {
+      fail(`resources ${resource.key} : entrée ${name} introuvable (${file})`);
+    }
+  }
+}
+
 for (const warning of warnings) console.warn(`::warning::${warning}`);
 if (errors.length > 0) {
   for (const error of errors) console.error(`::error::${error}`);
