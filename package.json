@@ -1,0 +1,38 @@
+{
+  "name": "permis-forge",
+  "version": "0.1.0",
+  "description": "Forge app + MCP server: Jira becomes the registry of what a coding agent is allowed to do — policy, approvals, signed time-boxed permits, tamper-evident ledger (Codegeist 2026).",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "forge",
+    "atlassian",
+    "jira",
+    "mcp",
+    "rovo",
+    "permissions",
+    "audit",
+    "codegeist"
+  ],
+  "author": "BaptisteFaisy",
+  "license": "MIT",
+  "dependencies": {
+    "@forge/api": "^8.5.0",
+    "@forge/resolver": "^2.0.2",
+    "@forge/sql": "^4.0.10"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.11.0",
+    "jest": "^29.7.0",
+    "js-yaml": "^5.5.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.0"
+  }
+}

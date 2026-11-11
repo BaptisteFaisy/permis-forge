@@ -1,2 +1,9 @@
+node_modules/
+dist/
+build/
+coverage/
+.forge/
+*.log
+.DS_Store
 __pycache__/
 *.py[cod]
