@@ -18,7 +18,7 @@
  * token identifies the pilot, and an unknown token is refused.
  */
 import { hashToken } from '../core/tokens';
-import { buildGateResponseBody, mapHookEventToAction } from '../core/gate';
+import { buildGateResponseBody, isWellFormedToolName, mapHookEventToAction } from '../core/gate';
 import { targetCovers } from '../core/glob';
 import { verifyPermit } from '../core/permits';
 import { HookEvent } from '../core/types';
@@ -108,6 +108,27 @@ function toHookEvent(body: any): HookEvent {
     args: typeof body?.args === 'object' && body.args !== null ? body.args : {},
     cwd: typeof body?.cwd === 'string' ? body.cwd : undefined,
   };
+}
+
+/**
+ * Refuse a malformed hook payload rather than interpret it.
+ *
+ * Not journalled on purpose: this is a transport-level defect, most often a
+ * command bridge with a mapping bug, and writing one ledger entry per tool call
+ * would flood the audit trail with something that is not an agent's action. It
+ * is logged instead, so `forge logs` shows it and the pilot sees the reason in
+ * their client.
+ */
+function malformedPayloadResponse(): WebTriggerResponse {
+  console.error('[permis-gate] malformed hook payload refused: toolName is not a non-empty string');
+  return respond(
+    200,
+    buildGateResponseBody({
+      decision: 'deny',
+      reason:
+        'Malformed hook payload: the tool name is missing or is not a string. The gate refuses rather than guess what the action was.',
+    }),
+  );
 }
 
 /** Paths a CI step asks about: an array, or a newline/comma separated string. */
@@ -252,6 +273,9 @@ export async function handleGate(input: WebTriggerRequest | Request | any): Prom
       return respond(401, { error: 'TOKEN_REVOKED' }, 'Unauthorized');
     }
     await runtime.repos.hookTokens.touchLastUsed(stored.tokenHash, runtime.now());
+    // A malformed payload is refused before it is interpreted: coercing the tool
+    // name would launder a contract violation into a plausible-looking request.
+    if (!isWellFormedToolName(body?.toolName)) return malformedPayloadResponse();
     return await decisionMode(header, body, toHookEvent(body), stored.accountId);
   } catch (error) {
     // Fail closed: a 5xx makes the client block the action (onFailure: block).

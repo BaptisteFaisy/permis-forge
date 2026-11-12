@@ -76,9 +76,17 @@ none of them contained.
 ## 4. Residual risks, stated
 
 - **An unknown tool with no arguments** still falls back to A-02 (N5). There is
-  nothing to classify: no target, no command. A client that strips `args` before
-  calling the gate is not defended against by the app — only by the client's own
-  hook configuration, which is class A-15 and cannot be widened by an agent.
+  nothing to classify: no target, no command. But a *malformed* payload — a tool
+  name that is not a non-empty string — is now **refused** outright, before it is
+  interpreted: coercing it to a placeholder ("unknown") is what turned a contract
+  violation into a plausible-looking request, which is the fail-open of §3. The
+  boundary is deliberate — a well-formed but unknown tool name is a client the app
+  has not heard of (classified from its arguments), a malformed one is a broken
+  or hostile client (refused). A malformed payload is refused *without* being
+  journalled: it is most often a bridge bug, and one ledger entry per tool call
+  would flood the audit trail with something that is not an agent's action. It is
+  logged instead, so `forge logs` shows it and the pilot reads the reason in
+  their client.
 - **A free-form description with no pattern match** is classified by the Forge
   `llm` module; if that call is unavailable the fallback is A-02. The doubt rule
   of §20 applies to the candidates the model returns, not to a total absence of
