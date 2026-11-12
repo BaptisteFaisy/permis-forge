@@ -394,6 +394,13 @@ the hook event on stdin, POSTs it to the gate and prints the answer, exiting 2 t
 configuration snippet to paste is in the header of that file. No configuration file is generated
 for a client whose format is not known here — inventing one would be worse than saying so.
 
+**The bridge exits 2 on a refusal, not only on an unreachable gate.** A client that reads only
+the exit code — a wrapper script, a CI step, an agent running the command itself — must not run
+the action after a refusal. `test/gate-bridge.test.ts` pins it. Caveat, observed with a real
+agent: a wrapper is *cooperative* — an agent can decide to edit directly instead of calling it.
+The mechanical guarantee comes from the client's own hook (`Claude Code` `http`, or the bridge
+wired into a client that runs command hooks and parses the answer).
+
 ### 11.2 The action is declared *after* it ran
 
 The `PostToolUse` hook posts the same payload to the same gate, with the same token. The gate
