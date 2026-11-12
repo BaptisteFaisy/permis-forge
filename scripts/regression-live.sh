@@ -55,7 +55,7 @@ echo "Régression live — projet $PROJECT, ticket $ISSUE"
 echo "1. Stockage et intégrité"
 H=$(admin "{\"action\":\"health\",\"projectId\":\"$PROJECT\"}")
 [ "$(printf '%s' "$H" | python3 -c 'import json,sys;d=json.load(sys.stdin)["tables"];print(all(v=="ok" for v in d.values()))')" = "True" ] \
-  && check "les 9 tables Forge SQL répondent" 1 || check "les 9 tables Forge SQL répondent" 0
+  && check "les 9 sondes de dépôt répondent (10 tables)" 1 || check "les 9 sondes de dépôt répondent (10 tables)" 0
 S=$(admin "{\"action\":\"status\",\"projectId\":\"$PROJECT\"}")
 [ "$(printf '%s' "$S" | field chainValid)" = "True" ] && check "chaîne du journal intacte" 1 || check "chaîne du journal intacte" 0
 CODE=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST "$ADMIN" -H 'Content-Type: application/json' \
@@ -103,7 +103,11 @@ SC=$(admin "{\"action\":\"screen\",\"screen\":\"simulationConsole\",\"projectId\
 [ "$SC" = "A-08 2" ] && check "console de simulation : A-02 reclassé A-08/N2" 1 || check "console de simulation ($SC)" 0
 
 echo "4. Dérive et politique (opérateur)"
-DRIFT_BODY='{"action":"apply-drift","projectId":"'"$PROJECT"'","issueKey":"'"$ISSUE"'","profileId":"regression","changes":[{"path":"db/migrations/950_drift.sql","source":"regression"}],"by":"regression"}'
+# A fresh target per run: apply-drift is idempotent by design, so a fixed path
+# would be penalised once and then skipped for ever — the check would go red on
+# the second run of the day instead of measuring what it claims to.
+RUN_ID=$(date +%s)
+DRIFT_BODY='{"action":"apply-drift","projectId":"'"$PROJECT"'","issueKey":"'"$ISSUE"'","profileId":"regression","changes":[{"path":"db/migrations/950_drift_'"$RUN_ID"'.sql","source":"regression"}],"by":"regression"}'
 D=$(admin "$DRIFT_BODY")
 [ "$(printf '%s' "$D" | field penalized)" = "1" ] \
   && check "dérive : un écart non déclaré est pénalisé et journalisé" 1 \
