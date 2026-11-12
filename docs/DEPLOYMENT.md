@@ -265,6 +265,19 @@ the organisation floor rules, which cost **15.4 s** once — and then broke the 
    (`1146` / "doesn't exist") does the bootstrap run once per container, then the query is
    retried. On the normal path the app issues **no DDL at all**.
 
+   **A schema addition needs one explicit bootstrap on an installed site.** The reactive
+   bootstrap triggers on a *missing-table* error (`1146`), but Forge SQL answers some absent-table
+   queries with a generic "Unknown SQL execution error" naming the table instead. When that
+   happens the bootstrap does not fire and every call touching the new table fails — closed, so
+   nothing leaks, but the app is unusable until the schema exists. Adding the `token_revocation`
+   table broke the live installation exactly this way, and the live harness caught it on its first
+   run. After any change to `SCHEMA_DDL`, run once per installation:
+
+   ```bash
+   curl -sS -X POST "$ADMIN_URL" -H "X-Permis-Admin: $SECRET" -d '{"action":"bootstrap-schema"}'
+   # {"ok":true,"detail":"10 tables (24 DDL statements), 5 organisation rules"}
+   ```
+
    **Consequence for schema evolution.** Forge SQL has no `ALTER TABLE`: a column cannot be added
    to a table an installation already has, because the reactive bootstrap only creates what is
    missing and never reshapes an existing table. A new field therefore goes into a **new table**,
