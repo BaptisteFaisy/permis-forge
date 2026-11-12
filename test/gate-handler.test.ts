@@ -60,13 +60,25 @@ describe('handleGate', () => {
     expect(payload.error).toBe('UNKNOWN_TOKEN');
   });
 
+  interface PermitFixture {
+    /** Exact target or glob of the permit scope; defaults to one migration file. */
+    target?: string;
+    /** Fields outside the signature (usesLeft, suspended, revokedAt). */
+    mutate?: (permit: Permit) => void;
+  }
+
   /** Issue a signed permit and persist it, for the CI verification mode below. */
-  async function savedPermit(sequence: number, mutate?: (permit: Permit) => void): Promise<Permit> {
+  async function savedPermit(sequence: number, fixture: PermitFixture = {}): Promise<Permit> {
     const repos = getDefaultRepositories();
     const permit = issuePermit(
       {
         id: newPermitId(sequence, 2026),
-        scope: { actionClass: 'A-08', target: 'db/migrations/001.sql', issueKey: 'PAY-1', projectId: 'PAY' },
+        scope: {
+          actionClass: 'A-08',
+          target: fixture.target ?? 'db/migrations/001.sql',
+          issueKey: 'PAY-1',
+          projectId: 'PAY',
+        },
         holderProfileId: 'default',
         pilotAccountId: 'pilot-123',
         issuedAt: new Date().toISOString(),
@@ -76,7 +88,7 @@ describe('handleGate', () => {
       resolveSigningSecret(),
     );
     // `mutate` only touches fields outside the signature (usesLeft, suspended, revokedAt).
-    if (mutate) mutate(permit);
+    if (fixture.mutate) fixture.mutate(permit);
     await repos.permits.savePermit(permit);
     return permit;
   }
@@ -151,8 +163,10 @@ describe('handleGate', () => {
   });
 
   it('reports a suspended permit as invalid, and says so', async () => {
-    const permit = await savedPermit(419, (item) => {
-      item.suspended = true;
+    const permit = await savedPermit(419, {
+      mutate: (item) => {
+        item.suspended = true;
+      },
     });
 
     const { payload } = await call({ permitId: permit.id });
@@ -164,7 +178,59 @@ describe('handleGate', () => {
 
   it('reports an unknown permit as invalid rather than as an error', async () => {
     const { payload } = await call({ permitId: 'PA-2026-999999' });
-    expect(payload).toEqual({ permitId: 'PA-2026-999999', found: false, valid: false });
+    expect(payload).toEqual({ permitId: 'PA-2026-999999', found: false, valid: false, covers: false });
+  });
+
+  it('covers every changed path of a pull request inside the permit scope', async () => {
+    const permit = await savedPermit(420, { target: 'db/migrations/*' });
+
+    const { payload } = await call({
+      permitId: permit.id,
+      paths: ['db/migrations/001.sql', 'db/migrations/002.sql'],
+    });
+    expect(payload.valid).toBe(true);
+    expect(payload.covers).toBe(true);
+    expect(payload.uncovered).toEqual([]);
+  });
+
+  it('refuses a pull request beyond the permit scope, and names the paths', async () => {
+    const permit = await savedPermit(421, { target: 'db/migrations/*' });
+
+    const { payload } = await call({
+      permitId: permit.id,
+      paths: ['db/migrations/001.sql', 'secrets/prod.env'],
+    });
+    expect(payload.valid).toBe(true);
+    expect(payload.covers).toBe(false);
+    expect(payload.uncovered).toEqual(['secrets/prod.env']);
+    // The scope itself is still not disclosed.
+    expect('scope' in payload).toBe(false);
+  });
+
+  it('accepts a newline separated list of paths, as a CI step produces', async () => {
+    const permit = await savedPermit(422, { target: 'db/migrations/*' });
+
+    const { payload } = await call({
+      permitId: permit.id,
+      paths: 'db/migrations/001.sql\ndb/migrations/002.sql',
+    });
+    expect(payload.covers).toBe(true);
+  });
+
+  it('still answers covers: true with no path, so existing callers are unaffected', async () => {
+    const permit = await savedPermit(423);
+
+    const { payload } = await call({ permitId: permit.id });
+    expect(payload.valid).toBe(true);
+    expect(payload.covers).toBe(true);
+    expect(payload.uncovered).toEqual([]);
+  });
+
+  it('reports an unknown permit as covering nothing', async () => {
+    const { payload } = await call({ permitId: 'PA-2026-888888', paths: ['db/migrations/001.sql'] });
+    expect(payload.found).toBe(false);
+    expect(payload.valid).toBe(false);
+    expect(payload.covers).toBe(false);
   });
 
   it('still accepts a Fetch Request, for offline testing', async () => {
