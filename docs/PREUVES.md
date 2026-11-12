@@ -67,6 +67,10 @@ so the deployed version quoted in the docs is checkable too.
 
 ## 2. The app is deployed in production too, and the harness passes there (12 November 2026)
 
+<!-- claims: historique -->
+
+*Section datée : elle décrit le déploiement et l'exécution de ce jour-là ; l'état courant est en §4.*
+
 **What was done.** The app was deployed to the **production** environment (app version **2.1.0**)
 and installed on the same site — installation `61ad469d-974c-4c30-a272-7b3416b66262`. The
 production installation starts empty, so `scripts/bootstrap-installation.sh` (new) creates the
@@ -124,6 +128,77 @@ which now checks the versions quoted in the docs against that file:
 ✔ app-version  docs/SUBMISSION.md:122  doc: version=2.1.0 env=production  réel: version=2.1.0
 ✔ live-replay  docs/SUBMISSION.md:126  doc: checks=26  réel: checks=26
 ```
+
+*(Those are the versions of that run; §4 carries the current ones.)*
+
+---
+
+## 4. The CI verification no longer reads the permits of another project (12 November 2026)
+
+**The defect.** The verification path is unauthenticated on purpose — a CI runner
+holds the gate URL, not a pilot's token — but the permit lookup ignored the
+project: `listPermits({})` returned **every** permit of the installation. A check
+that asked about a permit id therefore got the full state of a permit that had
+nothing to do with it: `found`, `valid`, `signatureValid`, `usesLeft`, `revoked`,
+`suspended`.
+
+**Observed on the production installation, before the fix** — a check of project
+`PAY` asking about a permit of project `ENGS`:
+
+```console
+$ curl -sS -X POST "$GATE" -H 'X-Permis-Issue: PAY-42' \
+    -d '{"permitId":"PA-2026-000001","paths":["db/migrations/777_probe.sql"]}'
+{"permitId":"PA-2026-000001","found":true,"valid":true,"covers":true,"uncovered":[],
+ "signatureValid":true,"expired":false,"revoked":false,"suspended":false,"usesLeft":1}
+```
+
+**After the fix**, the verification names its project (`projectId`, or the issue
+key in `X-Permis-Issue`) and the lookup is limited to it. Same installation,
+same permit, same requests:
+
+```console
+$ curl -sS -X POST "$GATE" -H 'X-Permis-Issue: PAY-42' \
+    -d '{"permitId":"PA-2026-000001","paths":["db/migrations/777_probe.sql"]}'
+{"permitId":"PA-2026-000001","found":false,"valid":false,"covers":false}
+
+$ curl -sS -X POST "$GATE" -d '{"permitId":"PA-2026-000001"}' -w ' [HTTP %{http_code}]'
+{"error":"PROJECT_REQUIRED","note":"A permit verification must name its project: send projectId, or the issue key in X-Permis-Issue."} [HTTP 400]
+
+$ curl -sS -X POST "$GATE" -d '{"permitId":"PA-2026-000001","projectId":"ENGS"}'
+{"permitId":"PA-2026-000001","found":true,"valid":true,"covers":true,"uncovered":[],
+ "signatureValid":true,"expired":false,"revoked":false,"suspended":false,"usesLeft":1}
+```
+
+The last line is the point: the legitimate use still works. The check that
+guarded `ENGS` still verifies its permit; the check that guarded `PAY` learns
+nothing about it.
+
+**Proof** — the property is now part of the live harness (30 checks, run against
+both installations on 12 November 2026):
+
+```console
+5. Vérification CI (point d'application n°3)
+  [OK]    permis émis pour la vérification (PA-2026-000002)
+  [OK]    vérification du permis du projet : trouvé et valide
+  [OK]    vérification depuis un autre projet : invisible
+  [OK]    vérification sans projet : refus 400
+
+Régression live : 30 OK, 0 échec(s)
+TOUT EST VERT
+```
+
+**Where the evidence lives.** `src/hooks/gate.ts` (`verificationProject()`),
+`scripts/regression-live.sh` (the four checks), `test/gate-handler.test.ts`
+(the three unit tests) and `examples/ci/verify-permit.yml` (the CI example now
+sends the project, `PERMIS_PROJECT`).
+
+**What is still open.** The delegation path (`delegate-permit`) does not check
+that the caller owns the permit it delegates: it looks the parent up by id
+among *all* permits. An agent could therefore delegate a permit issued to
+another pilot — the "narrowing only" promise would then be relative to a permit
+the caller does not hold. It is a real finding, confirmed by reading the code;
+it is not fixed here, because the live path to it (the Rovo MCP endpoint)
+requires the administrator OAuth activation that is still pending.
 
 ---
 
