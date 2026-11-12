@@ -1,15 +1,18 @@
 /**
  * Forge triggers: issue updates and nightly maintenance.
  *
- * Nightly maintenance does the three recurrent jobs of the spec (spec §16):
+ * Nightly maintenance does the recurrent jobs of the spec (spec §16):
  * expire permits, erode the trust capital of idle profiles, verify the hash
- * chain of the ledger. A broken chain is written as a deviation so the
- * verification screen shows it (spec §11).
+ * chain of the ledger, and anchor the day (Merkle root of the day's entry
+ * hashes, written to the chain and published outside the database so a third
+ * party can verify it — spec §11, docs/ANCHORING.md). A broken chain is
+ * written as a deviation so the verification screen shows it.
  */
 import { erodeTrust } from './core/trust';
 import { makeEntry, verifyChain } from './core/ledger';
 import { LedgerEntry } from './core/types';
 import { getRuntimeSync } from './mcp/runtime';
+import { anchorDay } from './services/anchor';
 
 /** Statuses that close a ticket; pending requests on it become obsolete. */
 const CLOSED_STATUSES = ['done', 'closed', 'resolved', 'terminé', 'fermé', 'resolu'];
@@ -55,7 +58,7 @@ export async function onIssueUpdated(event: any): Promise<void> {
   }
 }
 
-/** Nightly: expire permits, erode trust, verify the chain. */
+/** Nightly: expire permits, erode trust, verify the chain, anchor the day. */
 export async function onScheduledMaintenance(): Promise<void> {
   const runtime = getRuntimeSync();
   const entries = await runtime.repos.ledger.list({});
@@ -64,6 +67,10 @@ export async function onScheduledMaintenance(): Promise<void> {
     await expirePermits(projectId);
     await erodeProfiles(projectId, entries);
     await verifyProjectChain(projectId, entries);
+    // Last step: the anchor covers everything the maintenance wrote today.
+    // Best effort — a publication failure is logged, never thrown (same
+    // contract as notify.ts), so it cannot break the other jobs.
+    await anchorDay(runtime.repos, { projectId, at: runtime.now() });
   }
 }
 
