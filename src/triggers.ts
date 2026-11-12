@@ -13,6 +13,7 @@ import { makeEntry, verifyChain } from './core/ledger';
 import { LedgerEntry } from './core/types';
 import { getRuntimeSync } from './mcp/runtime';
 import { anchorDay } from './services/anchor';
+import { sweepApprovals } from './services/sla';
 
 /** Statuses that close a ticket; pending requests on it become obsolete. */
 const CLOSED_STATUSES = ['done', 'closed', 'resolved', 'terminé', 'fermé', 'resolu'];
@@ -67,6 +68,9 @@ export async function onScheduledMaintenance(): Promise<void> {
     await expirePermits(projectId);
     await erodeProfiles(projectId, entries);
     await verifyProjectChain(projectId, entries);
+    // A request nobody answers is worse than a refusal: remind, escalate, then
+    // expire it, so the agent is never left in an open-ended wait.
+    await sweepApprovals(runtime.repos, { projectId, now: runtime.now() });
     // Last step: the anchor covers everything the maintenance wrote today.
     // Best effort — a publication failure is logged, never thrown (same
     // contract as notify.ts), so it cannot break the other jobs.
