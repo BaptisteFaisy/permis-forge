@@ -10,7 +10,9 @@
     "lint": "tsc --noEmit",
     "demo": "node scripts/demo.mjs",
     "install:all": "npm install",
-    "install:ci": "npm ci --omit=optional --prefer-offline --no-audit --no-fund"
+    "install:ci": "npm ci --omit=optional --prefer-offline --no-audit --no-fund",
+    "verify:claims": "node scripts/verify-claims.mjs",
+    "verify:claims:live": "node scripts/verify-claims.mjs --live"
   },
   "keywords": [
     "forge",

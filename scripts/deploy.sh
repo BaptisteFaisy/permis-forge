@@ -11,6 +11,11 @@
 #   bash scripts/deploy.sh            # reads ~/.atlassian-login + ~/.atlassian-api-token
 #   bash scripts/deploy.sh --lint     # only validate the manifest
 #   bash scripts/deploy.sh --dry-run  # print the plan, change nothing
+#   bash scripts/deploy.sh --environment production   # deploy to production
+#
+# Après un déploiement réussi, la version réellement publiée est écrite dans
+# ~/.atlassian/permis-deploy-state.json : c'est ce fichier que
+# scripts/verify-claims.mjs confronte aux versions citées dans la doc.
 set -euo pipefail
 
 die() { printf 'ERREUR: %s\n' "$*" >&2; exit 1; }
@@ -21,8 +26,10 @@ TOKEN_FILE="${ATLASSIAN_TOKEN_FILE:-$HOME/.atlassian-api-token}"
 LOGIN_FILE="${ATLASSIAN_LOGIN_FILE:-$HOME/.atlassian-login}"
 NODE_BIN="${FORGE_NODE_BIN:-$HOME/tools/node-v26.12.1-linux-x64/bin}"
 FORGE="${FORGE_CLI:-$HOME/.local/opt/bin/forge}"
+STATE_FILE="${PERMIS_DEPLOY_STATE:-$HOME/.atlassian/permis-deploy-state.json}"
 MODE="full"
 DRY_RUN=0
+ENVIRONMENT="development"
 EMAIL="${FORGE_EMAIL:-}"
 SITE="${FORGE_SITE:-}"
 
@@ -32,6 +39,7 @@ while [ $# -gt 0 ]; do
     --site) SITE="$2"; shift 2 ;;
     --lint) MODE="lint"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --environment) ENVIRONMENT="$2"; shift 2 ;;
     -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) die "option inconnue : $1" ;;
   esac
@@ -72,7 +80,10 @@ run() {
 }
 
 step "Connexion (jeton lu depuis l'environnement, jamais affiché)"
-run "$FORGE" login --email "$EMAIL" --token "$FORGE_API_TOKEN" --non-interactive
+# Pas de keychain sur ce poste : la CLI travaille avec les variables
+# d'environnement. Si `login` échoue, ce n'est pas bloquant — mais on le dit.
+run "$FORGE" login --email "$EMAIL" --token "$FORGE_API_TOKEN" --non-interactive || \
+  step "login non nécessaire : la CLI utilise FORGE_EMAIL + FORGE_API_TOKEN"
 
 step "Lint du manifeste"
 run "$FORGE" lint
@@ -85,11 +96,52 @@ else
   run "$FORGE" register --accept-terms --non-interactive || step "register en échec : à faire à la main (forge create)"
 fi
 
-step "Déploiement"
-run "$FORGE" deploy --non-interactive
+step "Déploiement ($ENVIRONMENT)"
+DEPLOY_LOG="$(mktemp)"
+if [ "$DRY_RUN" = 1 ]; then
+  printf '    [dry-run] %s deploy -e %s --non-interactive\n' "$FORGE" "$ENVIRONMENT"
+else
+  "$FORGE" deploy -e "$ENVIRONMENT" --non-interactive 2>&1 | tee "$DEPLOY_LOG"
+fi
 
-step "Installation sur $SITE (produit jira)"
-run "$FORGE" install --site "$SITE" --product jira --non-interactive || \
+step "Installation sur $SITE (produit jira, environnement $ENVIRONMENT)"
+run "$FORGE" install --site "$SITE" --product jira -e "$ENVIRONMENT" --non-interactive || \
   step "install déjà faite ou à confirmer : forge install list"
+
+# La version publiée est une observation de la CLI, pas une déclaration : on
+# la lit dans sa sortie et on la range dans l'état local. Les docs la citent,
+# scripts/verify-claims.mjs la vérifie contre ce fichier.
+VERSION=""
+if [ -f "$DEPLOY_LOG" ]; then
+  VERSION="$(sed -n 's/.*version of your app \[\([0-9][0-9.]*\)\].*/\1/p' "$DEPLOY_LOG" | tail -1)"
+  [ -n "$VERSION" ] || VERSION="$(sed -n 's/.*[Vv]ersion[^0-9]\{1,12\}\([0-9][0-9.]*\).*/\1/p' "$DEPLOY_LOG" | tail -1)"
+  if [ -n "$VERSION" ]; then
+    mkdir -p "$(dirname "$STATE_FILE")"
+    python3 - "$STATE_FILE" "$ENVIRONMENT" "$VERSION" <<'PY'
+import datetime, json, os, sys
+
+path, environment, version = sys.argv[1], sys.argv[2], sys.argv[3]
+state = {}
+if os.path.exists(path):
+    try:
+        with open(path) as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        state = {}
+state[environment] = {
+    "version": version,
+    "deployed_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+}
+tmp = path + ".tmp"
+with open(tmp, "w") as handle:
+    json.dump(state, handle, indent=2, ensure_ascii=False)
+os.replace(tmp, path)
+print("État de déploiement écrit :", path, environment, version)
+PY
+  else
+    step "version publiée non lisible dans la sortie de la CLI — état non écrit"
+  fi
+  rm -f "$DEPLOY_LOG"
+fi
 
 step "Terminé. Vérifications : forge install list / forge webtrigger create"

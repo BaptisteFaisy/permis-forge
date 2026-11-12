@@ -403,6 +403,10 @@ Atlassian).
 
 ## 7. Live end-to-end validation on the deployed installation
 
+<!-- claims: historique -->
+
+*Section datée : elle décrit l'état au moment de la validation, pas l'état courant.*
+
 Not one of the six points above, but the proof that the product actually runs on Forge. Executed
 on 11 November 2026 against app `a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` (version 2.2.0),
 installed on `one-atlas-cndz.atlassian.net` (Jira, development environment), through the real

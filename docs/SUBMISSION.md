@@ -104,10 +104,10 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 - **One Atlassian Forge app installed on Jira** — TypeScript, strict mode (`tsconfig.json`), no external backend.
 - **`rovo:mcp` + `action`**: the twelve tools are declared once as `action` entries (strings/numbers/booleans only, per platform limits) and reused by the MCP server, the `rovo:skill`, the `rovo:agent`, and the UI.
 - **`webtrigger` (`gate`, urlFormat v2, dynamic response)**: the HTTP entry point called by the Claude Code `PreToolUse` hook (`type: "http"`, `onFailure: "block"`, `Authorization: Bearer $PERMIS_AGENT_TOKEN`) and by CI verification. Web triggers have no platform authentication, so the personal token — stored only as a hash — identifies the pilot.
-- **Forge SQL (mysql engine), 9 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
+- **Forge SQL (mysql engine), 10 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`, `token_revocation`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
 - **Hash-chained ledger, SHA-256**: `hash = sha256(canonical_json(entry))`, genesis = 64 zeroes, verified nightly by the `scheduledTrigger` (`src/core/ledger.ts`).
 - **Signed permits, HMAC-SHA256**: signature over the canonical JSON of identifier, scope, expiry, usages and holder, keyed with the installation secret (`src/core/permits.ts`).
-- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **364 offline unit tests in 30 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
+- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **502 offline unit tests in 40 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
 - **`llm` module** for classifying free-form descriptions only; deterministic patterns always come first.
 
 ## Live status — deployed, and replayable on demand
@@ -120,9 +120,9 @@ against it.
 | App | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
 | Site | `one-atlas-cndz.atlassian.net` — Jira, development environment, app version **2.20.0** |
 | Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
-| Storage | Forge SQL, 9 tables, hash-chained ledger re-verified on every run |
+| Storage | Forge SQL, 10 tables, hash-chained ledger re-verified on every run |
 | Gate latency | p95 **0.63 s** over 30 warm calls, 100 % under one second, write path included |
-| Live replay | `bash scripts/regression-live.sh` — **18 checks, 18 OK** against the deployed installation |
+| Live replay | `bash scripts/regression-live.sh` — **26 checks, 26 OK** against the deployed installation |
 | Offline replay | `node scripts/demo.mjs` — **11/11** acceptance scenarios |
 
 The live harness is the part worth showing: it drives the real web triggers and Forge SQL, with no
