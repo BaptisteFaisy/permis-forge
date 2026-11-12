@@ -76,6 +76,14 @@ export interface HookTokenRepository {
   save(token: HookToken): Promise<void>;
   listForAccount(accountId: string): Promise<HookToken[]>;
   touchLastUsed(hash: string, at: string): Promise<void>;
+  /**
+   * Revoke a token: it stops authenticating immediately and the reason is kept.
+   * Revocation lives in its own table, not in a column of `hook_token`, because
+   * Forge SQL has no ALTER — a new table is the only change that reaches an
+   * already-installed app (the reactive bootstrap creates what is missing).
+   */
+  revoke(hash: string, by: string, reason: string | undefined, at: string): Promise<void>;
+  isRevoked(hash: string): Promise<boolean>;
 }
 
 export interface Repositories {

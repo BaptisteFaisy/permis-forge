@@ -320,6 +320,21 @@ function createSqlHookTokens(db: SqlDb): Repositories['hookTokens'] {
     async touchLastUsed(hash, at) {
       await db.rows('UPDATE `hook_token` SET `last_used_at` = ? WHERE `token_hash` = ?', [at, hash]);
     },
+    async revoke(hash, by, reason, at) {
+      await db.upsert(
+        'token_revocation',
+        { token_hash: hash, revoked_by: by, reason: reason ?? null, revoked_at: at },
+        ['token_hash'],
+      );
+    },
+    async isRevoked(hash) {
+      const found = await db.one(
+        'SELECT `token_hash` FROM `token_revocation` WHERE `token_hash` = ? LIMIT 1',
+        [hash],
+        (row) => row?.token_hash != null,
+      );
+      return found === true;
+    },
   };
 }
 

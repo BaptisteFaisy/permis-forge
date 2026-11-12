@@ -206,6 +206,10 @@ The personal token **identifies the pilot**. It does **not** grant any right by 
   the token.
 - The agent never sees it as a capability: the file it protects (class **A-15**) cannot be edited
   by an agent, and the token only lives in the developer's environment.
+- **It can be revoked.** A lost laptop, a leaked environment, a contractor leaving: an operator
+  revokes the token and the gate refuses it from the next call, with `TOKEN_REVOKED` rather than
+  `UNKNOWN_TOKEN` — so the pilot looks for a revocation instead of a typo. Revocation works from
+  the plaintext token or from its hash, since the plaintext is never stored.
 
 ---
 
@@ -216,11 +220,19 @@ The personal token **identifies the pilot**. It does **not** grant any right by 
   trust capital of its profile.
 - The hook sends **tool names, paths and commands** — never the content of the files. Commands are
   masked by pattern (tokens, passwords) before being stored (§19).
-- The token is stored hashed; only its hash is kept by the app.
+- The token is stored hashed; only its hash is kept by the app, and one hashing implementation is
+  shared by the gate, the operator endpoint and the minting service (`src/core/tokens.ts`) — three
+  places hashing the same secret must not drift apart.
 - The gate is closed by default: `onFailure: "block"`.
 - The URL of the gate is installation-specific and the endpoint is not platform-authenticated, so
-  it must be treated as a sensitive internal endpoint: pair it with the personal token, and rotate
-  the token if it leaks.
+  it must be treated as a sensitive internal endpoint: pair it with the personal token, **revoke
+  the token if it leaks** (`revoke-token` on the operator endpoint), and rotate it.
+- The permit-verification path — the one that needs no token, for CI — carries a budget of 60
+  calls per minute. Beyond it the gate answers **429**, which fails a CI check: the safe direction,
+  since an unverifiable permit must not let a pull request through. The budget is per container and
+  Forge may run several, so it blunts bulk enumeration of sequential permit ids rather than
+  guaranteeing a hard ceiling. Authenticated decisions are never throttled: a pilot's hook must not
+  be slowed down by someone else's CI.
 - Only the tools listed in the `matcher` are watched. Widening the matcher widens the audit
   surface but also the number of interrupted calls: the recommended matcher covers `Bash`, `Edit`
   and `Write`.

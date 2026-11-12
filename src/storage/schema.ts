@@ -173,6 +173,18 @@ export const SCHEMA_DDL: string[] = [
   PRIMARY KEY (token_hash)
 )`,
   'CREATE INDEX IF NOT EXISTS idx_hook_token_account ON hook_token (account_id)',
+
+  // Revoked tokens live in their own table, not in a column of `hook_token`:
+  // Forge SQL has no ALTER, so a new table is the only change that reaches an
+  // installation that already exists (the reactive bootstrap creates whatever
+  // is missing). The primary key is the lookup, so no index is needed.
+  `CREATE TABLE IF NOT EXISTS token_revocation (
+  token_hash VARCHAR(128) NOT NULL,
+  revoked_by VARCHAR(64) NOT NULL,
+  reason VARCHAR(255) NULL,
+  revoked_at VARCHAR(32) NOT NULL,
+  PRIMARY KEY (token_hash)
+)`,
 ];
 
 /**
