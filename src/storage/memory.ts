@@ -35,6 +35,8 @@ interface MemoryState {
   trustEvents: Map<string, TrustEvent[]>;
   killSwitches: Map<string, KillSwitchState>;
   hookTokens: Map<string, HookToken>;
+  /** Revoked token hashes, kept apart: Forge SQL has no ALTER (see storage.ts). */
+  revokedTokens: Map<string, { by: string; reason?: string; at: string }>;
   permitSequences: Map<number, number>;
   requestSequences: Map<number, number>;
 }
@@ -251,6 +253,12 @@ function createHookTokenRepository(state: MemoryState): Repositories['hookTokens
       const token = state.hookTokens.get(hash);
       if (token) state.hookTokens.set(hash, { ...copy(token), lastUsedAt: at });
     },
+    async revoke(hash: string, by: string, reason: string | undefined, at: string): Promise<void> {
+      state.revokedTokens.set(hash, { by, reason, at });
+    },
+    async isRevoked(hash: string): Promise<boolean> {
+      return state.revokedTokens.has(hash);
+    },
   };
 }
 
@@ -267,6 +275,7 @@ export function createMemoryRepositories(): Repositories {
     trustEvents: new Map(),
     killSwitches: new Map(),
     hookTokens: new Map(),
+    revokedTokens: new Map(),
     permitSequences: new Map(),
     requestSequences: new Map(),
   };

@@ -24,6 +24,7 @@ import { applyDrift, detectDrift as detectDriftReport } from '../services/drift'
 import { applySuggestion, suggestPolicyChanges } from '../services/policy-suggestions';
 import { applySeed, planSeed } from '../services/seed-policy';
 import { parseChanges, planActionsFrom } from '../mcp/handlers/reads';
+import { hashToken } from '../core/tokens';
 import { verifyChain } from '../core/ledger';
 import { Repositories } from '../core/types';
 import { getRuntimeSync } from '../mcp/runtime';
@@ -142,6 +143,7 @@ const ALLOWED_ACTIONS = [
   'approve-request',
   'deny-request',
   'revoke-permit',
+  'revoke-token',
   'apply-drift',
   'apply-suggestion',
 ];
@@ -205,10 +207,32 @@ async function dispatchWrite(
     return respond(200, { ...result, projectId: seedProject });
   }
 
+  if (action === 'revoke-token') return revokeTokenOperation(repos, body);
   if (action === 'apply-drift') return applyDriftOperation(repos, projectId, body);
   if (action === 'apply-suggestion') return applySuggestionOperation(repos, projectId, body);
 
   return undefined;
+}
+
+/**
+ * Revoke a personal hook token, by its plaintext value or by its hash. The
+ * plaintext is never stored, so an operator who only has the hash (from the
+ * personal settings screen) can still revoke it.
+ */
+async function revokeTokenOperation(repos: Repositories, body: any): Promise<WebTriggerResponse> {
+  const token = typeof body?.token === 'string' ? body.token : '';
+  const hash =
+    typeof body?.tokenHash === 'string' && body.tokenHash.length > 0 ? body.tokenHash : token ? hashToken(token) : '';
+  if (!hash) return respond(400, { error: 'TOKEN_OR_HASH_REQUIRED' });
+
+  const stored = await repos.hookTokens.findByTokenHash(hash);
+  if (!stored) return respond(404, { error: 'UNKNOWN_TOKEN' });
+
+  const revokedAt = new Date().toISOString();
+  await repos.hookTokens.revoke(hash, String(body?.by ?? 'operator'), typeof body?.reason === 'string' ? body.reason : undefined, revokedAt);
+  // The answer never echoes the token or its hash: a log of this call must not
+  // become a place where credentials are collected.
+  return respond(200, { ok: true, accountId: stored.accountId, label: stored.label, revokedAt });
 }
 
 /**

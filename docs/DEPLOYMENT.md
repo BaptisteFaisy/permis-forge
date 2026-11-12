@@ -212,9 +212,15 @@ forge logs -e development -n 40
 ### The operator entry point
 
 `src/hooks/admin.ts` is a **second** web trigger, separate from the gate, for bootstrapping and
-demonstrating an installation before any screen is reachable. It accepts five operations:
-`status`, `health`, `bootstrap-schema`, `seed-policy`, `screen`, `mint-token`,
-`approve-request`, `deny-request` and `revoke-permit`.
+demonstrating an installation before any screen is reachable. Its operations are listed by the
+endpoint itself when it receives an unknown one (`ALLOWED_ACTIONS`):
+`status`, `health`, `screen` (read-only), then `bootstrap-schema`, `seed-policy`, `mint-token`,
+`approve-request`, `deny-request`, `revoke-permit`, `revoke-token`, `apply-drift` and
+`apply-suggestion`.
+
+The split is not cosmetic: recording a deviation moves the trust capital and applying a policy
+suggestion writes a rule (class **A-15**, N0). Neither is reachable by an agent — they live here,
+behind the installation secret, precisely so that the MCP surface can stay open for reading.
 
 Every call must present the installation secret in `X-Permis-Admin`; the comparison is
 constant-time and a wrong secret is refused with 401. Approvals still go through
@@ -251,13 +257,20 @@ Also worth knowing: the first call to a fresh container used to create the nine 
 the organisation floor rules, which cost **15.4 s** once — and then broke the app (next item).
 
 3. **Forge SQL rate-limits DDL, and containers are short-lived.** The first implementation replayed
-   the fifteen `CREATE TABLE IF NOT EXISTS` / seed statements on **every** cold start. Forge SQL
+   the whole `CREATE TABLE IF NOT EXISTS` / seed script on **every** cold start. Forge SQL
    answered `429 RATE_LIMIT_EXCEEDED` — surfaced as
    `Limits for the current installation have been exceeded` — and *every* gated action failed
    closed, while read-only operator calls still worked (they issue no DDL). The schema is now
    created **reactively**: a query runs first, and only if it reports a missing table
    (`1146` / "doesn't exist") does the bootstrap run once per container, then the query is
    retried. On the normal path the app issues **no DDL at all**.
+
+   **Consequence for schema evolution.** Forge SQL has no `ALTER TABLE`: a column cannot be added
+   to a table an installation already has, because the reactive bootstrap only creates what is
+   missing and never reshapes an existing table. A new field therefore goes into a **new table**,
+   which reaches an installed app with no migration — the first query that reports it missing
+   creates it. That is why revoked tokens live in `token_revocation` rather than in a `revoked_at`
+   column of `hook_token`.
    After a fresh install, an operator can create the schema explicitly instead of letting the
    first request pay for it:
 

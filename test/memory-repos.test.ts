@@ -78,7 +78,7 @@ function sampleRequest(overrides: Partial<ApprovalRequest> = {}): ApprovalReques
 }
 
 describe('schema DDL and seed rules', () => {
-  it('defines the nine Forge SQL tables without foreign keys', () => {
+  it('defines the ten Forge SQL tables without foreign keys', () => {
     const tables = SCHEMA_DDL.filter((stmt) => stmt.startsWith('CREATE TABLE IF NOT EXISTS')).map(
       (stmt) => /CREATE TABLE IF NOT EXISTS\s+(\w+)/i.exec(stmt)?.[1],
     );
@@ -93,6 +93,7 @@ describe('schema DDL and seed rules', () => {
       'trust_event',
       'kill_switch',
       'hook_token',
+      'token_revocation',
     ]);
     for (const stmt of SCHEMA_DDL) {
       expect(stmt.toUpperCase()).not.toContain('FOREIGN KEY');
