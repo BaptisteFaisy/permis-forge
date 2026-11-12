@@ -9,7 +9,7 @@
 | Surface | Who can reach it | What they control |
 |---|---|---|
 | `gate`, decision mode | anyone with the gate URL **and** a personal token | the whole hook payload: `toolName`, `args`, the ticket header |
-| `gate`, verification mode | anyone with the gate URL — **no token** | `permitId` and the `paths` submitted with it |
+| `gate`, verification mode | anyone with the gate URL — **no token** | `permitId`, the `paths` and the `projectId` submitted with it — and nothing more: the answer is scoped to that project, so the gate URL alone does not disclose the permits of the other projects |
 | `admin` | anyone with the installation secret | the operation and its arguments |
 
 The identity of the caller is **never** taken from the payload: it comes from

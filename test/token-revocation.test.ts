@@ -138,15 +138,15 @@ describe('hashToken is one implementation, shared', () => {
 describe('budget on the unauthenticated verification path', () => {
   it('answers verification while the window has budget', async () => {
     for (let i = 0; i < 60; i++) {
-      const { statusCode } = await gate({ permitId: 'PA-2026-900001' });
+      const { statusCode } = await gate({ permitId: 'PA-2026-900001', projectId: 'PAY' });
       expect(statusCode).toBe(200);
     }
   });
 
   it('answers 429 once the window is spent, so a CI check fails closed', async () => {
-    for (let i = 0; i < 60; i++) await gate({ permitId: 'PA-2026-900001' });
+    for (let i = 0; i < 60; i++) await gate({ permitId: 'PA-2026-900001', projectId: 'PAY' });
 
-    const { statusCode, payload } = await gate({ permitId: 'PA-2026-900001' });
+    const { statusCode, payload } = await gate({ permitId: 'PA-2026-900001', projectId: 'PAY' });
     expect(statusCode).toBe(429);
     expect(payload.error).toBe('RATE_LIMITED');
     expect(payload.retryAfterSeconds).toBe(60);
@@ -155,15 +155,15 @@ describe('budget on the unauthenticated verification path', () => {
   it('does not limit authenticated decisions: the hook of a real pilot is never throttled', async () => {
     const repos = getDefaultRepositories();
     const { token } = await createHookToken(repos, 'pilot-1', 'laptop');
-    for (let i = 0; i < 60; i++) await gate({ permitId: 'PA-2026-900001' });
+    for (let i = 0; i < 60; i++) await gate({ permitId: 'PA-2026-900001', projectId: 'PAY' });
 
     expect((await gate(READ, token)).statusCode).toBe(200);
   });
 
   it('opens again with a new window', async () => {
-    for (let i = 0; i < 61; i++) await gate({ permitId: 'PA-2026-900001' });
+    for (let i = 0; i < 61; i++) await gate({ permitId: 'PA-2026-900001', projectId: 'PAY' });
     resetVerificationBudget();
 
-    expect((await gate({ permitId: 'PA-2026-900001' })).statusCode).toBe(200);
+    expect((await gate({ permitId: 'PA-2026-900001', projectId: 'PAY' })).statusCode).toBe(200);
   });
 });

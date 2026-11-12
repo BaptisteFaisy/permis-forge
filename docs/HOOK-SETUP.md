@@ -300,10 +300,18 @@ forge side — a CI step asks the gate, and the gate answers.
 ```bash
 curl -sS -X POST "$PERMIS_GATE_URL" \
   -H 'Content-Type: application/json' \
-  -d '{"permitId":"PA-2026-000417","paths":["db/migrations/001.sql","src/index.ts"]}'
+  -H 'X-Permis-Issue: PAY-42' \
+  -d '{"permitId":"PA-2026-000417","projectId":"PAY","paths":["db/migrations/001.sql","src/index.ts"]}'
 ```
 
 `paths` is optional and accepts an array or a newline/comma separated string.
+
+`projectId` is **not** optional. The verification path is unauthenticated on purpose — a CI runner
+cannot hold a pilot's token — so the gate only answers about the permits of the project the
+request names (`projectId`, or the issue key in `X-Permis-Issue`). Without it, the answer is
+`400 PROJECT_REQUIRED`: a caller holding only the gate URL would otherwise learn the state of
+every permit of every project of the installation. A CI step always knows which project it
+guards, so the fix costs one line.
 
 ```json
 {
@@ -322,7 +330,7 @@ curl -sS -X POST "$PERMIS_GATE_URL" \
 
 | Field | Meaning |
 |---|---|
-| `found` | The permit id exists in this installation. An unknown id answers `found: false, valid: false, covers: false` — never a 404, so a CI step can treat both cases the same way. |
+| `found` | The permit id exists **in the named project**. An unknown id answers `found: false, valid: false, covers: false` — never a 404, so a CI step can treat both cases the same way. |
 | `valid` | Is the permit itself usable: `signatureValid && !expired && usesLeft > 0 && !revoked && !suspended`. |
 | `covers` | Are **all** the submitted `paths` inside the permit scope. `true` when no path is submitted, so a caller that only wants validity is unaffected. |
 | `uncovered` | The paths that fall outside the scope — the reason a merge gate refuses, named. |

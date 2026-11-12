@@ -136,6 +136,28 @@ E=$(admin '{"action":"apply-suggestion","projectId":"'"$PROJECT"'","suggestionId
   && check "suggestion inconnue : 404 plutôt qu'une règle inventée" 1 \
   || check "suggestion inconnue ($(printf '%s' "$E" | head -c 100))" 0
 
+echo "5. Vérification CI (point d'application n°3)"
+# A permit of the project, obtained the way a pilot obtains one: the gate
+# creates the request, the operator approves it.
+REQ=$(gate '{"toolName":"Edit","args":{"file_path":"db/migrations/902_verify.sql"}}' "$TOK" | reason | grep -oE 'RQ-[0-9]{4}-[0-9]{6}' | head -1)
+PERMIT=$(admin "{\"action\":\"approve-request\",\"requestId\":\"$REQ\",\"by\":\"regression\"}" \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin).get("permit",""))')
+[ -n "$PERMIT" ] && check "permis émis pour la vérification ($PERMIT)" 1 || check "permis émis pour la vérification" 0
+V=$(curl -sS -m 60 -X POST "$GATE" -H 'Content-Type: application/json' \
+  -d "{\"permitId\":\"$PERMIT\",\"projectId\":\"$PROJECT\",\"paths\":[\"db/migrations/902_verify.sql\"]}")
+[ "$(printf '%s' "$V" | field found)" = "True" ] && check "vérification du permis du projet : trouvé et valide" 1 \
+  || check "vérification du permis du projet ($V)" 0
+# The verification path is unauthenticated by design: a CI runner holds the
+# gate URL, not a pilot's token. The project is what bounds the answer — a
+# check on another project must learn nothing about this permit.
+V=$(curl -sS -m 60 -X POST "$GATE" -H 'Content-Type: application/json' \
+  -d "{\"permitId\":\"$PERMIT\",\"projectId\":\"AUTRE\",\"paths\":[\"db/migrations/902_verify.sql\"]}")
+[ "$(printf '%s' "$V" | field found)" = "False" ] && check "vérification depuis un autre projet : invisible" 1 \
+  || check "vérification depuis un autre projet ($V)" 0
+CODE=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST "$GATE" -H 'Content-Type: application/json' \
+  -d "{\"permitId\":\"$PERMIT\"}")
+[ "$CODE" = "400" ] && check "vérification sans projet : refus 400" 1 || check "vérification sans projet ($CODE)" 0
+
 echo
 echo "Régression live : $ok OK, $ko échec(s)"
 [ "$ko" = "0" ] || exit 1

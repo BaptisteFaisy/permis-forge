@@ -85,6 +85,8 @@ refreshed at the same time (app version **2.25.0**), so the deployed code is exa
 **Proof** — the same 26 checks, replayed against the production installation, through the real
 web triggers and Forge SQL:
 
+<!-- claims: historique -->
+
 ```console
 $ PERMIS_ADMIN_FILE=~/.atlassian/permis-admin-url-prod.txt \
   PERMIS_GATE_FILE=~/.atlassian/permis-gate-url-prod.txt \
@@ -94,6 +96,8 @@ Régression live — projet PAY, ticket PAY-42
 Régression live : 26 OK, 0 échec(s)
 TOUT EST VERT
 ```
+
+*(This run predates the four verification checks of §4: the harness now runs 30.)*
 
 and the bootstrap of that fresh installation:
 
@@ -125,11 +129,13 @@ which now checks the versions quoted in the docs against that file:
 
 ## 3. The live harness passes against the real installation (12 November 2026)
 
-**What was run.** `bash scripts/regression-live.sh` — 26 checks against the
+**What was run.** `bash scripts/regression-live.sh` — 30 checks against the
 deployed installation, through the real web triggers and Forge SQL, no Jira UI
 and no in-memory adapter. It exits non-zero if a single check fails.
 
 **Proof.**
+
+<!-- claims: historique -->
 
 ```console
 $ bash scripts/regression-live.sh
@@ -143,5 +149,7 @@ Régression live : 26 OK, 0 échec(s)
 TOUT EST VERT
 ```
 
-`docs/SUBMISSION.md` now quotes **26 checks, 26 OK** — the number the harness
+*(That run predates the four verification checks of §4: the harness now runs 30.)*
+
+`docs/SUBMISSION.md` now quotes **30 checks, 30 OK** — the number the harness
 actually prints, which the live mode of the claims verifier re-checks.

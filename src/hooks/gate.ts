@@ -219,11 +219,42 @@ function pathsOutsideScope(scopeTarget: string, paths: string[]): string[] {
   return paths.filter((path) => !targetCovers(scopeTarget, path));
 }
 
+/**
+ * The project a verification is about.
+ *
+ * A permit belongs to a project. The CI step that checks a pull request knows
+ * which project it works for, and has to say so: the verification path is
+ * unauthenticated by design (a CI runner cannot hold a pilot's token), so
+ * without the project the gate would report on the permits of *every* project
+ * of the installation to a caller that proved nothing.
+ */
+function verificationProject(body: any, header: HeaderLookup): string {
+  const explicit =
+    typeof body?.projectId === 'string' && body.projectId.trim().length > 0
+      ? body.projectId
+      : typeof body?.projectKey === 'string' && body.projectKey.trim().length > 0
+        ? body.projectKey
+        : '';
+  if (explicit) return explicit.trim().toUpperCase();
+  const issue = issueKeyOf(header, body);
+  if (issue && issue.includes('-')) return issue.split('-')[0].trim().toUpperCase();
+  return '';
+}
+
 /** Verification mode: is this permit still valid, and does it cover these paths? */
-async function verifyPermitMode(body: any): Promise<WebTriggerResponse> {
+async function verifyPermitMode(body: any, header: HeaderLookup): Promise<WebTriggerResponse> {
   const runtime = getRuntimeSync();
   const permitId = typeof body?.permitId === 'string' ? body.permitId : '';
-  const permits = await runtime.repos.permits.listPermits({});
+  const projectId = verificationProject(body, header);
+  if (!projectId) {
+    // No project, no answer. A refusal is the safe direction: an unverifiable
+    // permit must not let a pull request through.
+    return respond(400, {
+      error: 'PROJECT_REQUIRED',
+      note: 'A permit verification must name its project: send projectId, or the issue key in X-Permis-Issue.',
+    });
+  }
+  const permits = await runtime.repos.permits.listPermits({ projectId });
   const permit = permits.find((item) => item.id === permitId);
   if (!permit) return respond(200, { permitId, found: false, valid: false, covers: false });
   const now = runtime.now();
@@ -330,7 +361,7 @@ export async function handleGate(input: WebTriggerRequest | Request | any): Prom
         // unverifiable permit must not let a pull request through.
         return respond(429, { error: 'RATE_LIMITED', retryAfterSeconds: VERIFY_WINDOW_MS / 1000 }, 'Too many requests');
       }
-      return await verifyPermitMode(body);
+      return await verifyPermitMode(body, header);
     }
     const token = bearerToken(header);
     if (!token) return respond(401, { error: 'PERSONAL_TOKEN_REQUIRED' }, 'Unauthorized');

@@ -143,11 +143,40 @@ describe('handleGate', () => {
   it('verifies a signed permit from a CI step (enforcement point 3)', async () => {
     const permit = await savedPermit(417);
 
-    const { statusCode, payload } = await call({ permitId: permit.id });
+    const { statusCode, payload } = await call({ permitId: permit.id, projectId: 'PAY' });
     expect(statusCode).toBe(200);
     expect(payload.found).toBe(true);
     expect(payload.valid).toBe(true);
     expect(payload.usesLeft).toBe(1);
+  });
+
+  it('refuses a verification that does not name its project', async () => {
+    const permit = await savedPermit(424);
+
+    // No project, no answer: the gate would otherwise report on the permits of
+    // every project of the installation to a caller that proved nothing.
+    const { statusCode, payload } = await call({ permitId: permit.id });
+    expect(statusCode).toBe(400);
+    expect(payload.error).toBe('PROJECT_REQUIRED');
+  });
+
+  it('does not answer about the permits of another project', async () => {
+    const permit = await savedPermit(425);
+
+    // The verification path is unauthenticated by design — a CI runner holds the
+    // gate URL and nothing else — so the project is what bounds the answer.
+    const { payload } = await call({ permitId: permit.id, projectId: 'ENGS' });
+    expect(payload.found).toBe(false);
+    expect(payload.valid).toBe(false);
+    expect('usesLeft' in payload).toBe(false);
+  });
+
+  it('reads the project from the issue key the CI step sends', async () => {
+    const permit = await savedPermit(426);
+
+    const { payload } = await call({ permitId: permit.id }, { issueKey: 'PAY-1' });
+    expect(payload.found).toBe(true);
+    expect(payload.valid).toBe(true);
   });
 
   it('does not disclose a permit scope to an unauthenticated caller', async () => {
@@ -156,7 +185,7 @@ describe('handleGate', () => {
     // Verification mode needs no token, so a caller holding only the gate URL can
     // enumerate sequential permit ids: the answer says whether the permit is valid and
     // why, never which target it authorises.
-    const { payload } = await call({ permitId: permit.id });
+    const { payload } = await call({ permitId: permit.id, projectId: 'PAY' });
     expect(payload.valid).toBe(true);
     expect('scope' in payload).toBe(false);
     expect(JSON.stringify(payload)).not.toContain('db/migrations');
@@ -169,7 +198,7 @@ describe('handleGate', () => {
       },
     });
 
-    const { payload } = await call({ permitId: permit.id });
+    const { payload } = await call({ permitId: permit.id, projectId: 'PAY' });
     expect(payload.valid).toBe(false);
     expect(payload.suspended).toBe(true);
     expect(payload.expired).toBe(false);
@@ -177,7 +206,7 @@ describe('handleGate', () => {
   });
 
   it('reports an unknown permit as invalid rather than as an error', async () => {
-    const { payload } = await call({ permitId: 'PA-2026-999999' });
+    const { payload } = await call({ permitId: 'PA-2026-999999', projectId: 'PAY' });
     expect(payload).toEqual({ permitId: 'PA-2026-999999', found: false, valid: false, covers: false });
   });
 
@@ -186,6 +215,7 @@ describe('handleGate', () => {
 
     const { payload } = await call({
       permitId: permit.id,
+      projectId: 'PAY',
       paths: ['db/migrations/001.sql', 'db/migrations/002.sql'],
     });
     expect(payload.valid).toBe(true);
@@ -198,6 +228,7 @@ describe('handleGate', () => {
 
     const { payload } = await call({
       permitId: permit.id,
+      projectId: 'PAY',
       paths: ['db/migrations/001.sql', 'secrets/prod.env'],
     });
     expect(payload.valid).toBe(true);
@@ -212,6 +243,7 @@ describe('handleGate', () => {
 
     const { payload } = await call({
       permitId: permit.id,
+      projectId: 'PAY',
       paths: 'db/migrations/001.sql\ndb/migrations/002.sql',
     });
     expect(payload.covers).toBe(true);
@@ -220,14 +252,14 @@ describe('handleGate', () => {
   it('still answers covers: true with no path, so existing callers are unaffected', async () => {
     const permit = await savedPermit(423);
 
-    const { payload } = await call({ permitId: permit.id });
+    const { payload } = await call({ permitId: permit.id, projectId: 'PAY' });
     expect(payload.valid).toBe(true);
     expect(payload.covers).toBe(true);
     expect(payload.uncovered).toEqual([]);
   });
 
   it('reports an unknown permit as covering nothing', async () => {
-    const { payload } = await call({ permitId: 'PA-2026-888888', paths: ['db/migrations/001.sql'] });
+    const { payload } = await call({ permitId: 'PA-2026-888888', projectId: 'PAY', paths: ['db/migrations/001.sql'] });
     expect(payload.found).toBe(false);
     expect(payload.valid).toBe(false);
     expect(payload.covers).toBe(false);
