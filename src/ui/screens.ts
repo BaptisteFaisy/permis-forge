@@ -3,6 +3,7 @@
  */
 import { levelName } from '../core/catalog';
 import { AgentCallContext, Decision } from '../core/types';
+import { buildDelegationTree, delegationDepth } from '../services/delegation-tree';
 import { lintPolicy, summarizeFindings } from '../services/policy-lint';
 import { summarize30DayObservation } from './audit';
 import {
@@ -51,6 +52,7 @@ export async function issuePanel(deps: ResolverDeps, payload: any, context: any)
     deps.repos.ledger.list({ projectId, issueId: issueKey }),
   ]);
   const ordered = [...entries].sort((a, b) => b.seq - a.seq);
+  const delegationTree = buildDelegationTree(entries);
   const killSwitchActive = (await deps.repos.killSwitches.listActive(projectId)).some((s) => s.active);
   return {
     lang,
@@ -63,6 +65,10 @@ export async function issuePanel(deps: ResolverDeps, payload: any, context: any)
       statusLabel: statusLabel(lang, r.status),
     })),
     activePermits: permits.filter((p) => isUsablePermit(p, nowIso)).map(summarizePermit),
+    // The chain of custody of this ticket: which permit was delegated to whom,
+    // and how far the delegation went (spec §26).
+    delegationTree,
+    delegationDepth: delegationDepth(delegationTree),
     recentActions: ordered.slice(0, RECENT_ACTIONS_LIMIT).map(summarizeEntry),
     deviations: ordered.filter((e) => e.kind === 'deviation' || e.kind === 'correction').map(summarizeEntry),
     actions: {

@@ -107,6 +107,9 @@ for E in projectSettings projectPage issuePanel globalPage personalSettings; do
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print("ok" if "result" in d and not d["result"].get("error") else "ko")' 2>/dev/null)
   [ "$C" = "ok" ] && check "écran $E" 1 || check "écran $E" 0
 done
+DT=$(admin "{\"action\":\"screen\",\"screen\":\"issuePanel\",\"projectId\":\"$PROJECT\",\"issueKey\":\"$ISSUE\"}" \
+  | python3 -c 'import json,sys;r=json.load(sys.stdin)["result"];print("ok" if "delegationTree" in r and "delegationDepth" in r else "ko")' 2>/dev/null)
+[ "$DT" = "ok" ] && check "écran issuePanel : chaîne de délégation" 1 || check "chaîne de délégation ($DT)" 0
 SC=$(admin "{\"action\":\"screen\",\"screen\":\"simulationConsole\",\"projectId\":\"$PROJECT\",\"payload\":{\"target\":\"db/migrations/901_console.sql\",\"actionClass\":\"A-02\"}}" \
   | python3 -c 'import json,sys;r=json.load(sys.stdin)["result"];print(r["classification"]["actionClass"], r["level"])')
 [ "$SC" = "A-08 2" ] && check "console de simulation : A-02 reclassé A-08/N2" 1 || check "console de simulation ($SC)" 0
