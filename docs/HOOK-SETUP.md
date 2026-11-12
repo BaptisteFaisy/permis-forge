@@ -422,3 +422,38 @@ something that was not written by the party under control.
 
 The bridge needs no change for this: it forwards the payload unchanged, and the gate recognises
 the event on its own.
+
+## 12. The MCP path, for clients without a hook (opencode, ZeroClaw, …)
+
+The hook (`§9`, `§11`) is the mechanical path, but only Claude Code ships a native HTTP hook.
+opencode v2 has no tool hook; ZeroClaw neither. Both consume **MCP tools**. The product's MCP
+server lives behind the Atlassian MCP endpoint, which needs an administrator OAuth activation —
+so `scripts/permis-mcp-server.mjs` serves the same tools locally, speaking stdio MCP, and calls
+the `gate` web trigger.
+
+```bash
+# opencode (~/.config/opencode/opencode.json)
+"mcp": { "permis": { "type": "local",
+  "command": ["node", "/abs/path/scripts/permis-mcp-server.mjs"],
+  "environment": { "PERMIS_AGENT_ISSUE": "PAY-42" }, "enabled": true } }
+
+# ZeroClaw (config.toml)
+[[mcp.servers]]
+name = "permis"
+transport = "stdio"
+command = "/home/…/.local/bin/node"
+args = ["/abs/path/scripts/permis-mcp-server.mjs"]
+
+[mcp_bundles.permis]
+servers = ["permis"]
+```
+
+The server reads its credentials from `~/.atlassian/` (`permis-gate-url.txt`,
+`permis-agent-token.txt`, `permis-agent-issue.txt`) or from `PERMIS_GATE_URL` /
+`PERMIS_AGENT_TOKEN` / `PERMIS_AGENT_ISSUE`. Tools: `check-permission` (ask before acting),
+`declare-action` (record after acting), and `status` only when the operator secret is provided.
+
+**Honest scope.** The MCP path is *cooperative* by nature — the agent must call the tool. That is
+the product's own model: the agent asks, and an action that ran undeclared is caught by drift
+detection. The *mechanical* guarantee stays with the hook. This is the same trade-off as the Rovo
+MCP tools, just served without the Atlassian OAuth dance.
