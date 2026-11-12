@@ -75,7 +75,9 @@ async function health(repos: Repositories, projectId: string): Promise<Record<st
     { name: 'request', run: () => repos.requests.listPending() },
     { name: 'kill_switch', run: () => repos.killSwitches.get('project', projectId) },
     { name: 'agent_profile', run: () => repos.profiles.getProfile(projectId, 'health-probe') },
-    { name: 'trust_state', run: () => repos.trust.getState('health-probe') },
+    // The trust state lives in the `agent_profile` row, so this probe reads the
+    // `trust_event` table instead: one probe per table, none twice, none missed.
+    { name: 'trust_event', run: () => repos.trust.listEvents('health-probe') },
     { name: 'hook_token', run: () => repos.hookTokens.listForAccount('health-probe') },
   ];
   const results: Record<string, string> = {};

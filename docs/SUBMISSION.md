@@ -3,7 +3,7 @@
 > Ready-to-paste content for the Codegeist 2026 submission form
 > (https://codegeist2026.devpost.com/). Every section below maps to a Devpost field.
 > The specification of record is [`SPEC.md`](SPEC.md) (French); this submission is in English,
-> as required. Status statements reflect the repository as of **11 November 2026**.
+> as required. Status statements reflect the repository as of **12 November 2026**.
 
 ---
 
@@ -75,8 +75,8 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 
 | Bonus | Claimed | Justification (manifest module) |
 |---|---|---|
-| **MCP (principal)** | Yes | The `rovo:mcp` module `permis-mcp` in `manifest.yml` exposes the eight `action` entries as MCP tools, connectable from any third-party MCP client at `https://mcp.atlassian.com/forge/<appId>` over OAuth 2.1, after an administrator enables external exposure for the installation. The hook and the Rovo agent consume the same tools. |
-| **Agents Rovo** | Yes | The `rovo:agent` module `permis-agent` answers humans in Rovo Chat ("What did the agents do this week?", "Why was request RQ-2026-000417 refused?") using the eight tools, guided by the `rovo:skill` module `permis-skill` and its prompt's safety rules (never unlock A-10/A-12/A-15, always cite the rule). |
+| **MCP (principal)** | Yes | The `rovo:mcp` module `permis-mcp` in `manifest.yml` exposes the nine `action` entries as MCP tools, connectable from any third-party MCP client at `https://mcp.atlassian.com/forge/<appId>` over OAuth 2.1, after an administrator enables external exposure for the installation. The hook and the Rovo agent consume the same tools. |
+| **Agents Rovo** | Yes | The `rovo:agent` module `permis-agent` answers humans in Rovo Chat ("What did the agents do this week?", "Why was request RQ-2026-000417 refused?") using the nine tools, guided by the `rovo:skill` module `permis-skill` and its prompt's safety rules (never unlock A-10/A-12/A-15, always cite the rule). |
 | **Marketplace** | Yes | A single Forge app installed on Jira, no external service to run; free during the hackathon. The draft listing — including the permissions justification, the privacy statement and the honest egress declaration — is in [`MARKETPLACE.md`](MARKETPLACE.md). |
 | **Teamwork Graph (optional)** | Not claimed for v1 | No Teamwork Graph module is declared in `manifest.yml` at submission time. It is kept as an optional future integration (surfacing permits and agent profiles as graph entities); we do not claim the bonus for something that is not built. |
 
@@ -99,32 +99,52 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 ## How we built it
 
 - **One Atlassian Forge app installed on Jira** — TypeScript, strict mode (`tsconfig.json`), no external backend.
-- **`rovo:mcp` + `action`**: the eight tools are declared once as `action` entries (strings/numbers/booleans only, per platform limits) and reused by the MCP server, the `rovo:skill`, the `rovo:agent`, and the UI.
+- **`rovo:mcp` + `action`**: the nine tools are declared once as `action` entries (strings/numbers/booleans only, per platform limits) and reused by the MCP server, the `rovo:skill`, the `rovo:agent`, and the UI.
 - **`webtrigger` (`gate`, urlFormat v2, dynamic response)**: the HTTP entry point called by the Claude Code `PreToolUse` hook (`type: "http"`, `onFailure: "block"`, `Authorization: Bearer $PERMIS_AGENT_TOKEN`) and by CI verification. Web triggers have no platform authentication, so the personal token — stored only as a hash — identifies the pilot.
-- **Forge SQL (mysql engine), 10 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `approval`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
+- **Forge SQL (mysql engine), 9 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
 - **Hash-chained ledger, SHA-256**: `hash = sha256(canonical_json(entry))`, genesis = 64 zeroes, verified nightly by the `scheduledTrigger` (`src/core/ledger.ts`).
 - **Signed permits, HMAC-SHA256**: signature over the canonical JSON of identifier, scope, expiry, usages and holder, keyed with the installation secret (`src/core/permits.ts`).
-- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **221 offline unit tests in 18 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
+- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **364 offline unit tests in 30 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
 - **`llm` module** for classifying free-form descriptions only; deterministic patterns always come first.
+
+## Live status — deployed, and replayable on demand
+
+The app is not a mock: it is installed on a real Jira site, and every claim above has been run
+against it.
+
+| Item | Value |
+|---|---|
+| App | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
+| Site | `one-atlas-cndz.atlassian.net` — Jira, development environment, Forge major version 2 |
+| Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
+| Storage | Forge SQL, 9 tables, hash-chained ledger re-verified on every run |
+| Gate latency | p95 **0.63 s** over 30 warm calls, 100 % under one second, write path included |
+| Live replay | `bash scripts/regression-live.sh` — **18 checks, 18 OK** against the deployed installation |
+| Offline replay | `node scripts/demo.mjs` — **11/11** acceptance scenarios |
+
+The live harness is the part worth showing: it drives the real web triggers and Forge SQL, with no
+Jira UI and no in-memory adapter, and exits non-zero if a single check fails. Its transcript, the
+hand-run request → approval → permit cycle, and the three defects the harness exposed (with their
+fixes) are in [`VALIDATIONS.md`](VALIDATIONS.md) §7.
 
 ## What's next
 
 Honest status against the specification's priorities (§13): **S = desirable for the submission, C = after the hackathon.**
 
-| # | Requirement | Priority | Where we are (11 Nov 2026) |
+| # | Requirement | Priority | Where we are (12 Nov 2026) |
 |---|---|---|---|
-| PA-13 | Observation mode + 30-day report | S | Observation mode implemented in the decision core and the gate (decide + log, never block); the 30-day "what would have been blocked" report is pending. |
-| PA-14 | Trust capital and its effects | S | Implemented (`src/core/trust.ts`): deltas, promotion above 80, demotion below 30, suspension at 0, erosion towards 50 — unit-tested. |
-| PA-15 | Double approval (N1), distinct roles | S | Implemented (`src/core/approvals.ts`) — unit-tested. |
-| PA-16 | Plan first: split, permit batch, deviations | S | Implemented (`src/core/plan.ts`) — unit-tested. |
-| PA-17 | Precedents on the request card | S | Pending: not in `src/` yet; the card model is ready to receive it. |
-| PA-18 | Organisation policy floor | S | Floor resolution implemented and tested (`src/core/policy.ts`, `org-floor`); org rules are exposed on the global page resolver (`src/ui/resolvers.ts`). |
-| PA-19 | Permit verification from a CI step | S | The `gate` web trigger already answers permit checks with the personal token; a documented CI example (GitHub Actions step calling the gate) is pending. |
-| PA-20 | Detect undeclared sensitive actions | C | Planned after the hackathon. |
-| PA-21 | Policy proposed from history | C | Planned after the hackathon. |
-| PA-22 | Delegation: narrower permit for sub-agents | C | Planned after the hackathon. |
+| PA-13 | Observation mode + 30-day report | S | **Implemented** — an `observe` rule decides and journals without blocking; `summarize30DayObservation` feeds the project page and the promotion suggestions |
+| PA-14 | Trust capital and its effects | S | **Implemented** (`src/core/trust.ts`): deltas, promotion above 80, demotion below 30, suspension at 0, erosion towards 50 — unit-tested |
+| PA-15 | Double approval (N1), distinct roles | S | **Implemented** (`src/core/approvals.ts`): two grants by two different roles at N1 — unit-tested |
+| PA-16 | Plan first: split, permit batch, deviations | S | **Implemented** (`src/core/plan.ts`), plus `submit-plan`, which groups the approvals of a whole plan into one request |
+| PA-17 | Precedents on the request card | S | **Implemented** (`src/services/precedents.ts`): similar requests, outcome, approvers, permit, decision delay and what happened next |
+| PA-18 | Organisation policy floor | S | **Implemented** (`src/core/policy.ts`): a project may harden but never soften — the org rule wins when it is stricter (`source: 'org-floor'`), exposed on the global page |
+| PA-19 | Permit verification from a CI step | S | **Implemented** — the gate answers a `{ permitId }` POST with the signature, expiry, revocation, suspension and remaining uses; the ready-to-use GitHub Actions workflow is in [`examples/ci/verify-permit.yml`](../examples/ci/verify-permit.yml), verified live against the deployed installation |
+| PA-20 | Detect undeclared sensitive actions | C | **Implemented** (`src/services/drift.ts`): observed changes classified by the real classifier, compared with the declarations and the approved plan, penalised once and journaled |
+| PA-21 | Policy proposed from history | C | **Implemented** (`src/services/policy-suggestions.ts`): evidence-backed proposals, observe before hardening, never a locked class, never above the org floor |
+| PA-22 | Delegation: narrower permit for sub-agents | C | **Implemented** (`src/services/delegation.ts`): any widening refused with an explicit code, and the whole chain verifiable |
 
-Before submission (22 December): deploy to the demo site, run the eleven acceptance scenarios of §21, complete the six prototype validations tracked in [`VALIDATIONS.md`](VALIDATIONS.md), record the video, and submit the Marketplace listing.
+**Before submission (22 December), what remains is not code.** The app is deployed and live on the demo site, the acceptance scenarios have been replayed against the real installation (18 live checks, plus the hand-run request → approval → permit cycle), and the six prototype validations tracked in [`VALIDATIONS.md`](VALIDATIONS.md) are settled — with one point honestly still open: the identity carried by an external MCP call, which needs an administrator to enable external exposure and an OAuth consent in a browser. What is left is human: record the video, have an administrator open the external MCP exposure, and submit the Marketplace listing.
 
 ---
 

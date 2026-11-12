@@ -95,7 +95,7 @@ describe('handleAdmin operations', () => {
     const tables = Object.keys(payload.tables).sort();
     expect(tables).toEqual([
       'agent_profile', 'hook_token', 'kill_switch', 'ledger', 'permit',
-      'policy_rule', 'request', 'trust_state', 'zone',
+      'policy_rule', 'request', 'trust_event', 'zone',
     ]);
     for (const table of tables) expect(payload.tables[table]).toBe('ok');
   });

@@ -202,7 +202,7 @@ No HTTP 429 was observed at this volume (30-60 sequential calls). The platform f
 as documented: web trigger functions stop after **55 s**, Forge SQL allows **150 DML requests
 per second per install**, **5 s per SELECT** and **10 s per INSERT/UPDATE/DELETE**.
 
-**Second sample (version 2.4.0, after a redeploy).** 30 warm calls: min 0.338 s, median
+**Second sample (after a redeploy).** 30 warm calls: min 0.338 s, median
 0.435 s, **p95 0.696 s**, max 0.919 s, mean 0.465 s, **30/30 under 1 s**; write path 0.491 s.
 The two independent samples agree, so the figure is not a fluke of one container.
 
@@ -217,9 +217,11 @@ probe below shows every table readable. It is recorded here rather than hidden: 
 **closed** in that case (HTTP 500 → the hook blocks the action), which is the intended behaviour,
 and the mitigation is the same as for cold starts — filter client-side so the gate is only called
 for genuinely sensitive tools. A per-container diagnostic exists for it:
-`POST {admin} {"action":"health","projectId":"PAY"}` probes each of the nine tables
+`POST {admin} {"action":"health","projectId":"PAY"}` probes each table
 individually and returned `ok` for all of them on 11 November 2026 (policy_rule, zone, permit,
-ledger, request, kill_switch, agent_profile, trust_state, hook_token).
+ledger, request, kill_switch, agent_profile, trust_state, hook_token — the ninth probe was named
+`trust_state` at the time and read the trust columns of `agent_profile`; it now reads the
+`trust_event` table, see §7d).
 
 **Interpretation.** The target of spec §19 (< 1 s on 95 % of hook calls) is met on warm
 containers, including on the write path. The residual risk is the cold start, which is a
@@ -367,7 +369,8 @@ consecutive requests.
 itself; the *reception* half (a second account confirming the bell/email notification, and the
 delay over 10 requests) still needs two human accounts and is not claimed.
 
-**Result obtained.** On `one-atlas-cndz.atlassian.net`, app version 2.16.0: a gate call on ticket
+**Result obtained.** On `one-atlas-cndz.atlassian.net` (development environment, deployment of
+11 November 2026): a gate call on ticket
 **ENGS-32** for `db/migrations/012_notify.sql` was refused, created request **RQ-2026-000026**, and
 the app published the approval card as a comment authored by **`permis-agir-mint`** — the six
 fields of spec §8.1 (what / why / how / risk / who / approvers) plus the reminder that the pilot
@@ -402,7 +405,7 @@ Atlassian).
 ## 7. Live end-to-end validation on the deployed installation
 
 Not one of the six points above, but the proof that the product actually runs on Forge. Executed
-on 11 November 2026 against app `a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` (version 2.2.0),
+on 11 November 2026 against app `a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` (development environment),
 installed on `one-atlas-cndz.atlassian.net` (Jira, development environment), through the real
 `gate` web trigger and Forge SQL — no local shortcut, no in-memory adapter.
 
@@ -424,7 +427,7 @@ and the storage adapter waited for a `FORGE_ENVIRONMENT` variable that the platf
 so a deployed app would have silently used the in-memory adapter and lost every decision.
 
 Also observed: one call at **3.41 s** and the first call after a deploy at **15.4 s**, both cold
-starts — the second also created the ten tables and seeded the organisation rules.
+starts — the second also created the schema and seeded the organisation rules.
 
 **The "transient" limit was not transient, and it was our bug.** It recurred on a later deploy and
 `forge logs` gave the real cause:
@@ -437,7 +440,7 @@ ForgeSQLAPIError [ForgeSQLError]: Limits for the current installation have been 
   code: 'RATE_LIMIT_EXCEEDED'
 ```
 
-The schema bootstrap replayed fifteen DDL statements on **every cold start**, and Forge SQL
+The schema bootstrap replayed its 25 DDL statements on **every cold start**, and Forge SQL
 rate-limits DDL per installation. Read-only operator calls kept working because they issue no
 DDL, which is what made the failure look selective. Fix: the bootstrap is now **reactive** — a
 query runs first, and only a missing-table error (`1146`) triggers the DDL, once per container,
@@ -446,7 +449,7 @@ create the schema explicitly with `{"action":"bootstrap-schema"}`. After the fix
 gated calls on a data-deletion command all answered correctly (deny + a new request each time),
 with no 429.
 
-### 7b. The six Jira screens against Forge SQL (version 2.17.0)
+### 7b. The six Jira screens against Forge SQL (development environment)
 
 The resolvers were unit-tested against the in-memory adapter, and the UI Kit front-end was
 deployed, but nothing had proved the full path — resolver → **Forge SQL adapter** → payload —
@@ -472,6 +475,71 @@ Two lessons worth keeping: a `catch` that answers cleanly without logging makes 
 undiagnosable — the gate now logs before answering; and "it worked once, then failed" on a
 serverless platform usually means a per-container cost that the first container happened to
 afford.
+
+### 7c. A replayable harness over the deployed installation (18 checks)
+
+Sections 7 and 7b were run by hand, once. That is evidence, but it is not re-runnable — and a
+reviewer cannot tell a transcript from a wish. `scripts/regression-live.sh` fixes that: it replays
+**18 checks against the deployed installation**, through the real web triggers and Forge SQL, with
+no Jira UI and no in-memory adapter, and exits 0 only when every one passes.
+
+**Run on 12 November 2026** against installation `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0`
+(development, Forge major version 2), project `PAY`, ticket `PAY-42`:
+
+| Group | Checks | Result |
+|---|---|---|
+| 1. Storage and integrity | the 9 Forge SQL tables answer · the ledger chain is intact · an invalid operator secret is refused with 401 | 3 OK |
+| 2. Personal token and gate decisions | token minted (hash only stored) · a migration is refused without a permit (A-08) · reading is allowed (A-01/N5) · secrets are forbidden (A-10/N0) · policy and hooks are locked (A-15/N0) · a CI file is reclassified A-07 · an observe-mode rule allows **and** journals · an unseeded project falls back to the catalogue default · no token means 401 | 10 OK |
+| 3. Jira screens (resolver → Forge SQL) | `projectSettings` · `projectPage` · `issuePanel` · `globalPage` · `personalSettings` · simulation console (an A-02 announced on a migration answered **A-08/N2**) | 5 OK |
+
+**18 OK, 0 failures.** Credentials are read from `~/.atlassian/` (gate URL, operator URL,
+installation secret), are never printed, and are not in the repository.
+
+What the harness deliberately does **not** cover, so that its green is not read as a wider claim:
+
+- the six screens **in a browser** — it calls the same resolvers through the read-only `screen`
+  operator action, which proves resolver → Forge SQL → payload, not rendering or click paths;
+- the **request → approval → permit** cycle of section 7, which involves a third party and is not
+  idempotent; it stays a hand-run, transcribed above;
+- the **identity carried by an external MCP call** (§1) — still open, still honestly open;
+- the **delivery delay of the approval notification** to a second human account (§6).
+
+The harness writes: it mints a token and each refusal creates a request, so a run grows the ledger.
+That is intended — the chain check of group 1 runs over the entries the run itself added.
+
+### 7d. Three defects this exercise exposed, and their fixes (12 November 2026)
+
+Writing a harness that can be replayed forced three claims to be checked against the code rather
+than against the documentation. All three were wrong, none of them in a way the 364 offline tests
+had noticed.
+
+**1. A dead table in the schema.** The DDL created an `approval` table that no line of code reads or
+writes: an approval is stored in `request.approvals_json` and journalled as a ledger entry of kind
+`approval` (Forge SQL has no foreign keys, so the normalised table had nothing to join to). A table
+nobody reads is a table nobody tests, and it made every count in the documentation wrong. The table
+and its index are removed; `SCHEMA_DDL` is now **23 statements over 9 tables**, and the test pins
+the nine names instead of a count (`test/memory-repos.test.ts`).
+
+**2. A health probe that did not probe what it claimed.** The operator `health` action announced
+nine tables and returned nine `ok`s — but the ninth, `trust_state`, read the trust columns of
+`agent_profile`, so `agent_profile` was probed twice and **`trust_event` was never probed at all**.
+That is the table carrying the trust history of §9, the one a silent write failure would hurt most.
+The probe now calls `listEvents`, and the nine probe names are the nine table names, one each
+(`test/admin-handler.test.ts`).
+
+**3. The CI verification answer leaked the permit scope.** Verification mode is deliberately
+reachable without a personal token — a CI runner cannot hold a developer's token, and a web trigger
+has no platform authentication, so possession of the gate URL *is* the credential. But permit ids
+are sequential (`PA-2026-NNNNNN`), which made the endpoint an enumeration oracle returning the
+`scope` of any permit: the file, the command, the ticket it authorises. A CI step only needs
+`valid`. The answer now returns validity and the reason (`signatureValid`, `expired`, `revoked`,
+`suspended`, `usesLeft`) and **not** the scope; `suspended` was added because a suspended permit
+used to answer `valid: false` with no explanation, against the product's own "no refusal without a
+reason" rule. Two tests lock the behaviour (`test/gate-handler.test.ts`).
+
+The lesson is unflattering and worth stating: the offline suite covered the decision core well and
+the platform surface poorly, because the platform surface was documented from its own code. The
+harness is now the artefact that keeps those three honest.
 
 ---
 

@@ -186,7 +186,7 @@ answer. 4) Type question 2, show the cited rule.
 **On screen.** A simple animated diagram (or whiteboard screen): Claude Code → `PreToolUse`
 hook (http, onFailure: block) → web trigger `gate`; MCP client → OAuth 2.1 →
 `mcp.atlassian.com/forge/<appId>`; both arrows converging on the Forge app: action ×8 →
-`rovo:mcp`, `rovo:agent`, decision core, Forge SQL (10 tables) → chained ledger. End card:
+`rovo:mcp`, `rovo:agent`, decision core, Forge SQL (9 tables) → chained ledger. End card:
 repository URL + "Permis d'agir — Codegeist 2026".
 
 **Voice-over (≈78 words, 30 s).**

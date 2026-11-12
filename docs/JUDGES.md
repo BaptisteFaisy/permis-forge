@@ -1,14 +1,34 @@
 # Judges guide — how to test Permis d'agir
 
-Three ways to try the app, from the lightest to the strictest. All of them exercise the same
+Four ways to try the app, from the lightest to the strictest. All of them exercise the same
 policy engine; they differ only in who asks.
 
-> The product specification (in French) is kept verbatim in [`SPEC.md`](SPEC.md). The three
+> The product specification (in French) is kept verbatim in [`SPEC.md`](SPEC.md). The four
 > testing paths below are §23 and the eleven acceptance scenarios are §21.
 
 ---
 
-## 1. Three ways to test
+## 0. Where the app is running
+
+The app is deployed, not merely described. It is installed on a real Jira site
+(`one-atlas-cndz.atlassian.net`, development environment) and everything below can be replayed
+against it.
+
+| What | Where |
+|---|---|
+| Sample project | `PAY`, with ticket `PAY-42` |
+| Replay the live checks | `bash scripts/regression-live.sh` — 18 checks against the deployed installation, through the real web triggers and Forge SQL |
+| Replay the scenarios offline | `node scripts/demo.mjs` — 11/11, no network needed |
+| Read the evidence | [`VALIDATIONS.md`](VALIDATIONS.md) — what was measured, on which date, and with which limits |
+
+Three gaps are stated rather than hidden: the identity carried by an **external** MCP call
+needs an administrator to enable external exposure (Way B below), the delivery delay of the
+approval notification to a second human account is not measured, and the six screens are
+verified through their resolvers against Forge SQL rather than by clicking them in a browser.
+
+---
+
+## 1. Four ways to test
 
 ### Way A — Inside Jira only (no installation)
 
@@ -54,6 +74,23 @@ the call context — never from the inputs.
    request number when it denies.
 4. You can also call the gate by hand with `curl`; see [`HOOK-SETUP.md`](HOOK-SETUP.md).
 
+### Way D — With a CI step (enforcement point 3)
+
+The hook is the main enforcement point, but a workstation can be switched off. The merge gate
+is the late one: a pull request that touches a sensitive zone must carry a valid permit.
+
+1. Copy [`examples/ci/verify-permit.yml`](../examples/ci/verify-permit.yml) into
+   `.github/workflows/` of the repository you want to guard.
+2. Set the `PERMIS_GATE_URL` repository secret to the gate URL of the installation.
+3. Open a pull request whose description cites a permit, in the form
+   `Permis-Agent: PA-2026-000417`.
+4. The workflow asks the gate whether that permit is still valid, and **fails the check** when
+   it is not — expired, revoked, suspended, or already spent. It holds read-only permissions
+   and runs on the unprivileged pull request event.
+
+The answer never exposes what the permit authorises: it says whether the permit is valid and
+why, not the target it covers.
+
 ---
 
 ## 2. The eleven acceptance scenarios
@@ -96,7 +133,9 @@ Tick each box; the expected observable behaviour is stated for each one.
 
 ## 4. A five-minute path
 
-If you only have five minutes:
+If you only have five minutes, start with `bash scripts/regression-live.sh` — it replays 18
+checks against the deployed installation and tells you which line of the policy engine is
+broken if one is. Then, by hand:
 
 1. Run **scenario 1** in the simulation console: an A-08 announced as A-02 is reclassified and the
    answer explains it.

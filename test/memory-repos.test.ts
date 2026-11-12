@@ -78,9 +78,22 @@ function sampleRequest(overrides: Partial<ApprovalRequest> = {}): ApprovalReques
 }
 
 describe('schema DDL and seed rules', () => {
-  it('defines the ten Forge SQL tables without foreign keys', () => {
-    const tables = SCHEMA_DDL.filter((stmt) => stmt.startsWith('CREATE TABLE IF NOT EXISTS'));
-    expect(tables).toHaveLength(10);
+  it('defines the nine Forge SQL tables without foreign keys', () => {
+    const tables = SCHEMA_DDL.filter((stmt) => stmt.startsWith('CREATE TABLE IF NOT EXISTS')).map(
+      (stmt) => /CREATE TABLE IF NOT EXISTS\s+(\w+)/i.exec(stmt)?.[1],
+    );
+    // Pinned by name, not by count: a table nobody reads is a table nobody tests.
+    expect(tables).toEqual([
+      'policy_rule',
+      'zone',
+      'agent_profile',
+      'request',
+      'permit',
+      'ledger',
+      'trust_event',
+      'kill_switch',
+      'hook_token',
+    ]);
     for (const stmt of SCHEMA_DDL) {
       expect(stmt.toUpperCase()).not.toContain('FOREIGN KEY');
     }

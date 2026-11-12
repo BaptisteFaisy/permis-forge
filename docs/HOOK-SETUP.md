@@ -273,3 +273,71 @@ needed for clients that cannot call an HTTP endpoint from a hook.
 
 Sources: https://code.claude.com/docs/en/hooks — https://cursor.com/docs/hooks —
 https://cursor.com/docs/reference/third-party-hooks
+
+---
+
+## 10. The merge gate — verifying a permit from CI (enforcement point 3)
+
+The hook enforces the policy on the workstation. A workstation can be switched off, so spec §10
+adds a second, later gate: a pull request that touches a sensitive zone must carry a **valid
+permit**. An app installed on Jira cannot call the forge API (§18), so this check runs on the
+forge side — a CI step asks the gate, and the gate answers.
+
+### The call
+
+```bash
+curl -sS -X POST "$PERMIS_GATE_URL" \
+  -H 'Content-Type: application/json' \
+  -d '{"permitId":"PA-2026-000417"}'
+```
+
+```json
+{
+  "permitId": "PA-2026-000417",
+  "found": true,
+  "valid": true,
+  "signatureValid": true,
+  "expired": false,
+  "revoked": false,
+  "suspended": false,
+  "usesLeft": 0
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `found` | The permit id exists in this installation. An unknown id answers `found: false, valid: false` — never a 404, so a CI step can treat both cases the same way. |
+| `valid` | The single field a gate needs: `signatureValid && !expired && usesLeft > 0 && !revoked && !suspended`. |
+| `signatureValid` | The HMAC-SHA256 over the signed fields still matches with the installation secret — the permit was not rewritten. |
+| `expired` / `revoked` / `suspended` / `usesLeft` | Why an invalid permit is invalid. No refusal without a reason. |
+
+`usesLeft: 0` with `valid: false` is the normal end of a single-use permit that has already been
+spent: the action happened, the proof is closed. A CI check that verifies a permit cited in a pull
+request should therefore run **while the permit still has uses left**, or the team should accept
+that a spent permit is reported as no longer usable.
+
+### The ready-to-use workflow
+
+[`examples/ci/verify-permit.yml`](../examples/ci/verify-permit.yml) is a complete GitHub Actions
+workflow, verified live against the deployed installation (a spent permit answered `valid: false`,
+a freshly approved one `valid: true`). Copy it into `.github/workflows/` of the repository you want
+to guard and set **one** secret, `PERMIS_GATE_URL`.
+
+It extracts the `PA-2026-000417` an agent cites in its pull request description, asks the gate, and
+fails the check when the answer is not `valid`. It is triggered by the unprivileged `pull_request`
+event and holds `contents: read` + `pull-requests: read` only: the step reads a description and
+calls an endpoint, so it needs no write access and must not run with elevated privileges.
+
+### Why no token, and what that costs
+
+Verification mode is reachable **without** a personal token. That is deliberate: a CI runner cannot
+hold a developer's token, and a web trigger has no platform authentication, so possession of the
+gate URL *is* the credential.
+
+The consequence is honest and worth stating: permit ids are sequential, so anyone holding the gate
+URL has an enumeration oracle. The answer is therefore **minimised** — it says whether a permit is
+valid and why, but never its `scope`. A caller cannot learn *which target* a permit authorises (the
+file, the command, the ticket) by guessing ids. Deciding an action still requires the pilot's
+personal token; only the yes/no verification is open.
+
+Keep the gate URL in a CI secret, not in the workflow file.

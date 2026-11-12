@@ -87,18 +87,9 @@ export const SCHEMA_DDL: string[] = [
   'CREATE INDEX IF NOT EXISTS idx_request_status ON request (status, issue_id)',
   'CREATE INDEX IF NOT EXISTS idx_request_project ON request (project_id, created_at)',
 
-  // ------------------------------------------------------------- approvals
-  `CREATE TABLE IF NOT EXISTS approval (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  request_id VARCHAR(64) NOT NULL,
-  approver_account_id VARCHAR(64) NOT NULL,
-  role VARCHAR(64) NOT NULL,
-  decision VARCHAR(16) NOT NULL,
-  reason TEXT NULL,
-  at VARCHAR(32) NOT NULL,
-  PRIMARY KEY (id)
-)`,
-  'CREATE INDEX IF NOT EXISTS idx_approval_request ON approval (request_id)',
+  // There is no separate `approval` table: Forge SQL has no foreign keys, and an approval
+  // is only ever read together with the request it belongs to, so approvals live in
+  // `request.approvals_json` and are journalled as ledger entries of kind `approval`.
 
   // --------------------------------------------------------------- permits
   `CREATE TABLE IF NOT EXISTS permit (
