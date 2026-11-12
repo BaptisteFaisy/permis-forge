@@ -289,11 +289,21 @@ The eleven acceptance scenarios of the specification run against the real
 decision engine and the in-memory storage — no Atlassian account, no network:
 
 ```bash
-npm ci
+npm run install:ci           # npm ci --omit=optional (113 MB, the UI Kit is not needed here)
 node scripts/demo.mjs        # prints the transcript, then "11/11 scenarios passed"
-npx jest                     # 22 suites, unit tests
+npx jest                     # 30 suites, unit tests
 node scripts/check-manifest.mjs
 ```
+
+Against a **deployed** installation, the same spirit runs online:
+
+```bash
+bash scripts/regression-live.sh   # 18 checks through the real web triggers and Forge SQL
+```
+
+It reads the gate URL, the operator URL and the installation secret from
+`~/.atlassian/` (never from the repository, never printed), and exits non-zero
+on the first failure. See `docs/DEPLOYMENT.md`.
 
 Ready-to-use examples ship with the repository:
 
