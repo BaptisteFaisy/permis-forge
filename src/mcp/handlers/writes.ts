@@ -11,11 +11,8 @@ import { maskSecrets } from '../../core/mask';
 import { parsePlan } from '../../core/plan';
 import { newPermitId } from '../../core/permits';
 import { ActionRequest, ApprovalRequest } from '../../core/types';
-import {
-  delegatePermit as buildChildPermit,
-  recordDelegation,
-  withParent,
-} from '../../services/delegation';
+import { delegatePermit as buildChildPermit, recordDelegation, withParent } from '../../services/delegation';
+import { recordDeclaredAction } from '../../services/declared-action';
 import {
   buildCaller,
   getRuntime,
@@ -97,23 +94,17 @@ export async function declareAction({ payload, context }: HandlerArgs): Promise<
   const actionClass = typeof payload?.actionClass === 'string' ? payload.actionClass : 'A-02';
   const outcome = typeof payload?.outcome === 'string' ? payload.outcome : '';
   const permitId = typeof payload?.permitId === 'string' ? payload.permitId : undefined;
-  const prev = await runtime.repos.ledger.lastEntry(projectId);
-  const entry = makeEntry(
-    {
-      kind: 'action-declared',
-      projectId,
-      issueId: issueKey,
-      profileId: resolveProfileId(payload),
-      pilotAccountId: resolveAccountId(context),
-      actionClass,
-      target: maskSecrets(target),
-      permitId,
-      detail: { outcome: maskSecrets(outcome) },
-      at: runtime.now(),
-    },
-    prev,
-  );
-  await runtime.repos.ledger.append(entry);
+  const entry = await recordDeclaredAction(runtime.repos, {
+    projectId,
+    issueKey,
+    profileId: resolveProfileId(payload),
+    pilotAccountId: resolveAccountId(context),
+    actionClass,
+    target,
+    outcome,
+    permitId,
+    at: runtime.now(),
+  });
   return toJson({
     declared: true,
     seq: entry.seq,

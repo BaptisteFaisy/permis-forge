@@ -11,6 +11,7 @@ import {
   HookDecision,
   HookEvent,
   HookFile,
+  HookFileEntry,
 } from './types';
 
 const BASH_TOOLS = new Set(['bash', 'shell', 'bashoutput']);
@@ -20,6 +21,11 @@ const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ls']);
 const DEFAULT_TOKEN_ENV_VAR = 'PERMIS_AGENT_TOKEN';
 const DEFAULT_TIMEOUT_SECONDS = 10;
 const DEFAULT_MATCHERS = ['Bash|Edit|Write|MultiEdit'];
+/** Where the command bridge lives, for the clients without a native HTTP hook. */
+const DEFAULT_BRIDGE_PATH = '.cursor/hooks/gate-bridge.sh';
+const DEFAULT_BRIDGE_TIMEOUT_SECONDS = 15;
+/** Cursor's matcher syntax differs from Claude Code's: `Shell`, not `Bash`. */
+const DEFAULT_CURSOR_MATCHERS = ['Shell|Write|Read'];
 const MAX_DESCRIPTION_LENGTH = 200;
 
 export interface MapHookOptions {
@@ -153,24 +159,81 @@ export function buildHookFile(opts: BuildHookFileOptions): HookFile {
   const tokenEnvVar = opts.tokenEnvVar ?? DEFAULT_TOKEN_ENV_VAR;
   const timeout = opts.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const matchers = opts.matchers ?? DEFAULT_MATCHERS;
+  const httpHook: HookFileEntry = {
+    type: 'http',
+    url: opts.gateUrl,
+    timeout,
+    onFailure: 'block',
+    headers: { Authorization: `Bearer $${tokenEnvVar}` },
+    allowedEnvVars: [tokenEnvVar],
+  };
 
   return {
     hooks: {
       PreToolUse: matchers.map((matcher) => ({
         matcher,
-        hooks: [
-          {
-            type: 'http',
-            url: opts.gateUrl,
-            timeout,
-            onFailure: 'block',
-            headers: { Authorization: `Bearer $${tokenEnvVar}` },
-            allowedEnvVars: [tokenEnvVar],
-          },
-        ],
+        hooks: [httpHook],
+      })),
+      // The same URL, after the tool ran: the action is declared without the
+      // agent's cooperation, so drift detection has something to compare the
+      // observed changes with. A PostToolUse hook cannot undo anything, so it
+      // never blocks — but it authenticates the same way.
+      PostToolUse: matchers.map((matcher) => ({
+        matcher,
+        hooks: [httpHook],
       })),
     },
   };
+}
+
+/** Clients whose hook configuration this app can generate. */
+export type HookClient = 'claude-code' | 'cursor';
+
+export interface HookClientOptions extends BuildHookFileOptions {
+  /** Path of the command bridge, for the clients without a native HTTP hook. */
+  bridgePath?: string;
+}
+
+/**
+ * The Cursor configuration: the same gate, reached through the command
+ * bridge, because Cursor documents command and prompt hooks, not the HTTP type.
+ */
+export function buildCursorHookFile(opts: HookClientOptions): Record<string, unknown> {
+  const bridgePath = opts.bridgePath ?? DEFAULT_BRIDGE_PATH;
+  const timeout = opts.timeoutSeconds ?? DEFAULT_BRIDGE_TIMEOUT_SECONDS;
+  const matchers = opts.matchers ?? DEFAULT_CURSOR_MATCHERS;
+  return {
+    version: 1,
+    hooks: {
+      preToolUse: matchers.map((matcher) => ({
+        command: bridgePath,
+        matcher,
+        timeout,
+        failClosed: true,
+      })),
+    },
+    _comment: [
+      'Cursor loads Claude Code hook configurations (.claude/settings.json) but documents',
+      'command-based and prompt-based hooks, not the http type. This file wires the same',
+      'gate through the command bridge, which fails closed on exit code 2.',
+      'Required environment: PERMIS_AGENT_GATE_URL, PERMIS_AGENT_TOKEN, and optionally',
+      'PERMIS_AGENT_ISSUE (the Jira ticket, sent as the X-Permis-Issue header).',
+    ],
+  };
+}
+
+/**
+ * The hook configuration of a client, from the same policy and the same gate
+ * URL. Two clients are generated because their formats are known and shipped
+ * in `examples/hooks/`; for any other client the bridge is the supported path
+ * (documented in HOOK-SETUP §9), and inventing a configuration file whose
+ * format is not known would be worse than saying so.
+ */
+export function buildHookFileForClient(
+  client: HookClient,
+  opts: HookClientOptions,
+): HookFile | Record<string, unknown> {
+  return client === 'cursor' ? buildCursorHookFile(opts) : buildHookFile(opts);
 }
 
 /** Format the JSON response body expected by Claude Code HTTP hooks. */

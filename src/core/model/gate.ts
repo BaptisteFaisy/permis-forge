@@ -26,5 +26,7 @@ export interface HookFileEntry {
 export interface HookFile {
   hooks: {
     PreToolUse: { matcher: string; hooks: HookFileEntry[] }[];
+    /** After the tool ran: the action is declared without the agent's help. */
+    PostToolUse?: { matcher: string; hooks: HookFileEntry[] }[];
   };
 }

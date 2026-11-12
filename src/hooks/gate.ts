@@ -19,9 +19,11 @@
  */
 import { hashToken } from '../core/tokens';
 import { buildGateResponseBody, isWellFormedToolName, mapHookEventToAction } from '../core/gate';
+import { classifyAction } from '../core/classify';
 import { targetCovers } from '../core/glob';
 import { verifyPermit } from '../core/permits';
 import { HookEvent } from '../core/types';
+import { recordDeclaredAction } from '../services/declared-action';
 import { buildCaller, getRuntimeSync } from '../mcp/runtime';
 
 /** Forge web trigger request payload. */
@@ -102,12 +104,81 @@ function bearerToken(header: HeaderLookup): string | undefined {
   return value.toLowerCase().startsWith('bearer ') ? value.slice(7).trim() : undefined;
 }
 
+/**
+ * The tool name, in either spelling: ours (`toolName`, what the bridge sends)
+ * or Claude Code's (`tool_name`, what a PostToolUse payload carries).
+ */
+function toolNameOf(body: any): unknown {
+  return body?.toolName ?? body?.tool_name;
+}
+
+/** The arguments, in either spelling: ours (`args`) or Claude Code's (`tool_input`). */
+function argsOf(body: any): Record<string, unknown> {
+  if (typeof body?.args === 'object' && body.args !== null) return body.args;
+  if (typeof body?.tool_input === 'object' && body.tool_input !== null) return body.tool_input;
+  return {};
+}
+
 function toHookEvent(body: any): HookEvent {
+  const toolName = toolNameOf(body);
   return {
-    toolName: typeof body?.toolName === 'string' ? body.toolName : 'unknown',
-    args: typeof body?.args === 'object' && body.args !== null ? body.args : {},
+    toolName: typeof toolName === 'string' ? toolName : 'unknown',
+    args: argsOf(body),
     cwd: typeof body?.cwd === 'string' ? body.cwd : undefined,
   };
+}
+
+/** The ticket an action serves: the bridge sends it in a header, or the caller in the body. */
+function issueKeyOf(header: HeaderLookup, body: any): string | undefined {
+  return (
+    header('x-permis-issue') ??
+    (typeof body?.issueKey === 'string' && body.issueKey.length > 0 ? body.issueKey : undefined)
+  );
+}
+
+/** Is this payload a declaration of an action that already ran? */
+function isDeclaration(body: any): boolean {
+  const event = body?.hook_event_name ?? body?.hookEventName;
+  return body?.mode === 'declare' || event === 'PostToolUse';
+}
+
+/**
+ * Declaration mode: the client reports an action that already ran.
+ *
+ * A PostToolUse hook cannot undo anything, so this mode never blocks — it
+ * records what happened, so the drift detection has something to compare the
+ * observed changes with. The identity comes from the personal token, exactly
+ * as in decision mode; the class comes from the real classifier, not from what
+ * the client announces.
+ */
+async function declareMode(
+  body: any,
+  accountId: string,
+  issueKey: string | undefined,
+): Promise<WebTriggerResponse> {
+  const runtime = getRuntimeSync();
+  const action = mapHookEventToAction(toHookEvent(body), {
+    issueKey,
+    projectKey: issueKey && issueKey.includes('-') ? issueKey.split('-')[0] : undefined,
+  });
+  const classification = await classifyAction({ ...action, at: runtime.now() });
+  const entry = await recordDeclaredAction(runtime.repos, {
+    projectId: action.projectId ?? 'unknown',
+    issueKey,
+    profileId: 'default',
+    pilotAccountId: accountId,
+    actionClass: classification.actionClass,
+    target: action.target,
+    outcome: typeof body?.outcome === 'string' ? body.outcome : 'executed',
+    permitId: typeof body?.permitId === 'string' ? body.permitId : undefined,
+    at: runtime.now(),
+  });
+  return respond(200, {
+    declared: true,
+    seq: entry.seq,
+    hash: entry.hash,
+    actionClass: classification.actionClass,
+  });
 }
 
 /**
@@ -195,8 +266,7 @@ async function decisionMode(
   // The ticket is not part of the client payload: the bridge sends it in a
   // header, or the caller puts it in the body. Without it, actions beyond N4
   // are refused (spec §20).
-  const issueKey =
-    header('x-permis-issue') ?? (typeof body?.issueKey === 'string' && body.issueKey.length > 0 ? body.issueKey : undefined);
+  const issueKey = issueKeyOf(header, body);
   const action = mapHookEventToAction(event, {
     issueKey,
     projectKey: issueKey && issueKey.includes('-') ? issueKey.split('-')[0] : undefined,
@@ -275,7 +345,11 @@ export async function handleGate(input: WebTriggerRequest | Request | any): Prom
     await runtime.repos.hookTokens.touchLastUsed(stored.tokenHash, runtime.now());
     // A malformed payload is refused before it is interpreted: coercing the tool
     // name would launder a contract violation into a plausible-looking request.
-    if (!isWellFormedToolName(body?.toolName)) return malformedPayloadResponse();
+    if (!isWellFormedToolName(toolNameOf(body))) return malformedPayloadResponse();
+    // A client hook reporting an action that already ran: record it, never block.
+    if (isDeclaration(body)) {
+      return await declareMode(body, stored.accountId, issueKeyOf(header, body));
+    }
     return await decisionMode(header, body, toHookEvent(body), stored.accountId);
   } catch (error) {
     // Fail closed: a 5xx makes the client block the action (onFailure: block).

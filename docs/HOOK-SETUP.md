@@ -366,3 +366,44 @@ scope itself — the paths of a pull request are public in the pull request. Dec
 requires the pilot's personal token; only the yes/no verification is open.
 
 Keep the gate URL in a CI secret, not in the workflow file.
+
+---
+
+## 11. The same gate, several clients — and the action declared after it ran
+
+### 11.1 One policy, one gate, several clients
+
+The configuration is generated from the same policy and the same gate URL. Two clients are
+generated because their formats are known and shipped in `examples/hooks/`:
+
+| Client | Form | Mechanism |
+|---|---|---|
+| Claude Code | `.claude/settings.json` | native **HTTP** hook, `onFailure: "block"` |
+| Cursor | `.cursor/hooks.json` | **command bridge** (`failClosed: true`), because Cursor documents command and prompt hooks, not the HTTP type |
+
+For any other client, the **bridge** is the supported path: `examples/hooks/gate-bridge.sh` reads
+the hook event on stdin, POSTs it to the gate and prints the answer, exiting 2 to block. The
+configuration snippet to paste is in the header of that file. No configuration file is generated
+for a client whose format is not known here — inventing one would be worse than saying so.
+
+### 11.2 The action is declared *after* it ran
+
+The `PostToolUse` hook posts the same payload to the same gate, with the same token. The gate
+recognises it (`hook_event_name: "PostToolUse"`, or `mode: "declare"`) and records the action in
+the ledger instead of deciding it.
+
+Why it matters: an agent that forgets to declare an action leaves a hole in the audit trail — and
+the hole is exactly where a dishonest agent would leave it. The declaration now comes from the
+client, not from the agent's good will, so drift detection compares the observed changes with
+something that was not written by the party under control.
+
+- It **never blocks**: a post-tool hook cannot undo anything. The gate records and answers 200.
+- It **authenticates** like any other call: the personal token identifies the pilot, and the
+  class comes from the real classifier, not from what the client announces. A migration announced
+  as an ordinary edit is recorded as a migration.
+- It is **not journalled as a refusal** when the payload is malformed: a malformed declaration is
+  refused with a reason, but a transport defect is logged rather than written to the ledger, so a
+  broken bridge cannot flood the audit trail.
+
+The bridge needs no change for this: it forwards the payload unchanged, and the gate recognises
+the event on its own.
