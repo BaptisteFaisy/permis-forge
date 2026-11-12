@@ -30,7 +30,7 @@ specification.
 | Risk | Mitigation |
 |---|---|
 | "An agent can ignore the tool" | §10 assumes it openly and provides the hook, closed by default (`onFailure: "block"`): without an answer from the app, the sensitive action does not happen. |
-| Too many interruptions, therefore workarounds | Wide N4 and N5 levels, observation mode before any hardening, plan first: one request for a whole plan. |
+| Too many interruptions, therefore workarounds | Wide N4 and N5 levels, observation mode before any hardening, plan first: one request for a whole plan, and a deadline on every approval — reminder, escalation, then expiry (`src/services/sla.ts`). |
 | Approval given without reading | Short card, precedents, a reason required to refuse — and for an unusually long duration. |
 | Dependency on a single client for the hook | The MCP tool and the CI verification work for every client. |
 | Hook latency | Pattern filtering, policy cache, a one-second target measured on 95 % of calls. |
