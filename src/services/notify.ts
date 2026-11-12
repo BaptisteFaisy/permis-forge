@@ -15,16 +15,9 @@
  * notification).
  */
 import { ApprovalRequest, LedgerEntry } from '../core/types';
+import { AdfNode, bullet, bulletList, doc, paragraph, text } from './adf';
 
-/** Minimal Atlassian Document Format node. */
-export interface AdfNode {
-  type: string;
-  text?: string;
-  version?: number;
-  attrs?: Record<string, unknown>;
-  content?: AdfNode[];
-  marks?: { type: string; attrs?: Record<string, unknown> }[];
-}
+export type { AdfNode };
 
 export interface NoticeInput {
   request: ApprovalRequest;
@@ -39,20 +32,6 @@ export interface NoticeInput {
 export interface ApprovalNotice {
   title: string;
   body: AdfNode;
-}
-
-function text(value: string, bold = false): AdfNode {
-  const node: AdfNode = { type: 'text', text: value };
-  if (bold) node.marks = [{ type: 'strong' }];
-  return node;
-}
-
-function paragraph(...content: AdfNode[]): AdfNode {
-  return { type: 'paragraph', content };
-}
-
-function bullet(...content: AdfNode[]): AdfNode {
-  return { type: 'listItem', content: [paragraph(...content)] };
 }
 
 /** Build the approval card as an ADF document (no network, no side effect). */
@@ -79,17 +58,13 @@ export function buildApprovalNotice(input: NoticeInput): ApprovalNotice {
   // otherwise).
   return {
     title,
-    body: {
-      type: 'doc',
-      version: 1,
-      content: [
-        paragraph(text(title, true)),
-        { type: 'bulletList', content: items },
-        paragraph(
-          text('The pilot of this request cannot approve it. A denial requires a written reason.'),
-        ),
-      ],
-    },
+    body: doc(
+      paragraph(text(title, true)),
+      bulletList(items),
+      paragraph(
+        text('The pilot of this request cannot approve it. A denial requires a written reason.'),
+      ),
+    ),
   };
 }
 

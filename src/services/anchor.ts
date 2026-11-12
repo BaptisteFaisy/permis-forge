@@ -15,6 +15,8 @@
 import { makeEntry } from '../core/ledger';
 import { merkleRoot } from '../core/merkle';
 import { exportLedgerToConfluenceStorage } from '../ui/audit';
+import { AdfNode, bullet, bulletList, code, doc, paragraph, text } from './adf';
+import { CommentPoster, defaultPoster } from './notify';
 import { AnchorDetail, LedgerEntry, LedgerKind, Repositories } from '../core/types';
 
 /** Kinds excluded from the anchored leaves: the anchors themselves. */
@@ -24,6 +26,8 @@ export interface AnchorPublication {
   title: string;
   /** Confluence storage format (XHTML). */
   storage: string;
+  /** Jira comment body (ADF); absent for Confluence-only publications. */
+  adf?: AdfNode;
 }
 
 /** Publishes one anchor outside the app database; injected in tests. */
@@ -64,6 +68,33 @@ export function anchorLeaves(entries: LedgerEntry[], day: string): LedgerEntry[]
     .sort((a, b) => a.seq - b.seq);
 }
 
+/**
+ * The Jira comment body: short on purpose — the root, the count, and where to
+ * find the verification procedure. The day's entry table stays in Confluence,
+ * because a comment holding 200 rows is unreadable.
+ */
+export function buildAnchorComment(
+  projectId: string,
+  day: string,
+  root: string,
+  count: number,
+): AdfNode {
+  return doc(
+    paragraph(text(`Daily ledger anchor — ${day} — ${projectId}`, true)),
+    bulletList([
+      bullet(text('Entries anchored: ', true), text(String(count))),
+      bullet(text('Merkle root: ', true), code(root)),
+    ]),
+    paragraph(
+      text(
+        'This comment lives outside the application database, and the app cannot edit or ' +
+          'delete it: it is the trust anchor for the day. Verify any entry against this ' +
+          'root with the procedure in docs/ANCHORING.md of the app repository.',
+      ),
+    ),
+  );
+}
+
 /** The published page: the root, its metadata, and the day's entries table. */
 export function buildAnchorPublication(
   projectId: string,
@@ -80,7 +111,11 @@ export function buildAnchorPublication(
     `docs/ANCHORING.md of the app repository. This page is published outside ` +
     `the application database: it is the trust anchor for the day.</p>` +
     table;
-  return { title: `Permis d'agir — anchor ${projectId} ${day}`, storage };
+  return {
+    title: `Permis d'agir — anchor ${projectId} ${day}`,
+    storage,
+    adf: buildAnchorComment(projectId, day, root, entries.length),
+  };
 }
 
 /**
@@ -141,13 +176,40 @@ async function publish(publication: AnchorPublication, publisher?: AnchorPublish
   }
 }
 
-/** Default transport: create a Confluence page through the Forge REST API. */
-export function defaultPublisher(): AnchorPublisher | undefined {
-  // The anchor page needs a target space; without it there is nowhere to
-  // publish and the root simply stays inside the chain.
-  const spaceKey =
-    process.env.FORGE_USER_VAR_PERMIS_ANCHOR_SPACE ?? process.env.PERMIS_ANCHOR_SPACE;
-  if (!spaceKey || spaceKey.length === 0) return undefined;
+/** An app variable, readable as a Forge user variable or as a plain env var. */
+function envValue(name: string): string | undefined {
+  const value = process.env[`FORGE_USER_VAR_${name}`] ?? process.env[name];
+  return value && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Jira transport: one comment on the audit ticket named by `PERMIS_ANCHOR_ISSUE`.
+ *
+ * This is the default because it needs no permission the app does not already
+ * hold — it reuses the comment poster of the approver notifications
+ * (`write:jira-work`) — and because a Jira comment lives outside the app's
+ * Forge SQL database, where the app cannot edit or delete it afterwards.
+ */
+export function jiraCommentPublisher(
+  issueKey: string,
+  poster?: CommentPoster,
+): AnchorPublisher | undefined {
+  const transport = poster ?? defaultPoster();
+  if (!transport) return undefined;
+  return async (publication: AnchorPublication) => {
+    if (!publication.adf) return;
+    await transport(issueKey, publication.adf);
+  };
+}
+
+/**
+ * Confluence transport: one page per anchored day in the space named by
+ * `PERMIS_ANCHOR_SPACE`. Optional, because it needs the
+ * `write:confluence-content` scope, which `manifest.yml` does not request by
+ * default: without it the call is refused and the failure is logged — the root
+ * stays in the chain either way.
+ */
+export function confluencePublisher(spaceKey: string): AnchorPublisher | undefined {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const api = require('@forge/api');
@@ -171,4 +233,13 @@ export function defaultPublisher(): AnchorPublisher | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Default transport: the Jira comment if an audit ticket is set, else Confluence. */
+export function defaultPublisher(): AnchorPublisher | undefined {
+  const issueKey = envValue('PERMIS_ANCHOR_ISSUE');
+  if (issueKey) return jiraCommentPublisher(issueKey);
+  const spaceKey = envValue('PERMIS_ANCHOR_SPACE');
+  if (spaceKey) return confluencePublisher(spaceKey);
+  return undefined;
 }
