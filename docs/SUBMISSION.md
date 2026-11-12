@@ -118,8 +118,9 @@ against it.
 | Item | Value |
 |---|---|
 | App | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
-| Site | `one-atlas-cndz.atlassian.net` — Jira, development environment, app version **2.20.0** |
-| Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
+| Site | `one-atlas-cndz.atlassian.net` — Jira, `development` environment, app version **2.25.0** |
+| Production | same app on the `production` environment, app version **2.1.0**, installation `61ad469d-974c-4c30-a272-7b3416b66262` — the version a judge installs from the Marketplace |
+| Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` (development) |
 | Storage | Forge SQL, 10 tables, hash-chained ledger re-verified on every run |
 | Gate latency | p95 **0.63 s** over 30 warm calls, 100 % under one second, write path included |
 | Live replay | `bash scripts/regression-live.sh` — **26 checks, 26 OK** against the deployed installation |

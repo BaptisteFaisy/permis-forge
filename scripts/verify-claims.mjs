@@ -122,17 +122,20 @@ function deployFacts() {
   }
 }
 
-/** Harnais live : compte les contrôles passés et les échecs. */
+/** Harnais live : compte les contrôles passés et les échecs (une seule exécution). */
+let harnessCache = null;
 function harnessFacts() {
+  if (harnessCache) return harnessCache;
   const output = execFileSync('bash', ['scripts/regression-live.sh'], {
     cwd: ROOT,
     encoding: 'utf8',
     timeout: 900_000,
   });
-  return {
+  harnessCache = {
     checks: (output.match(/\[OK\]/g) ?? []).length,
     failures: (output.match(/\[ÉCHEC\]/g) ?? []).length,
   };
+  return harnessCache;
 }
 
 // ---------------------------------------------------------- affirmations
@@ -352,7 +355,10 @@ function render(rows) {
       const mark = row.status === 'OK' ? '✔' : row.status === 'ERREUR' ? '!' : '✘';
       const said = Object.entries(row.expected).map(([k, v]) => `${k}=${v}`).join(' ');
       const got = row.reality
-        ? Object.keys(row.expected).map((k) => `${k}=${row.reality[k] ?? '?'}`).join(' ')
+        ? Object.keys(row.expected)
+            .filter((k) => k !== 'env')
+            .map((k) => `${k}=${realityValue(row.expected, row.reality, k) ?? '?'}`)
+            .join(' ')
         : (row.error ?? '—').slice(0, 60);
       return `${mark} ${row.id.padEnd(12)} ${row.doc}:${row.line}  doc: ${said}  réel: ${got}`;
     })

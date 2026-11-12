@@ -65,7 +65,65 @@ so the deployed version quoted in the docs is checkable too.
 
 ---
 
-## 2. The live harness passes against the real installation (12 November 2026)
+## 2. The app is deployed in production too, and the harness passes there (12 November 2026)
+
+**What was done.** The app was deployed to the **production** environment (app version **2.1.0**)
+and installed on the same site — installation `61ad469d-974c-4c30-a272-7b3416b66262`. The
+production installation starts empty, so `scripts/bootstrap-installation.sh` (new) creates the
+schema, loads the policy seed, and prints the state it obtained. The development deployment was
+refreshed at the same time (app version **2.25.0**), so the deployed code is exactly `main`.
+
+**Two traps, both worth knowing.**
+
+- The app variable `PERMIS_AGENT_SECRET` is **per environment**: production had none, so the
+  first production deployment came up with no signing secret. Setting the variable is not enough —
+  the deployment has to be redone for it to apply.
+- A production installation gets **no web trigger URL** at install time. `forge webtrigger create`
+  is what mints one, per installation — the development installation has its own pair, and they
+  are not interchangeable.
+
+**Proof** — the same 26 checks, replayed against the production installation, through the real
+web triggers and Forge SQL:
+
+```console
+$ PERMIS_ADMIN_FILE=~/.atlassian/permis-admin-url-prod.txt \
+  PERMIS_GATE_FILE=~/.atlassian/permis-gate-url-prod.txt \
+  bash scripts/regression-live.sh
+Régression live — projet PAY, ticket PAY-42
+…
+Régression live : 26 OK, 0 échec(s)
+TOUT EST VERT
+```
+
+and the bootstrap of that fresh installation:
+
+```console
+$ PERMIS_ADMIN_FILE=~/.atlassian/permis-admin-url-prod.txt bash scripts/bootstrap-installation.sh
+Amorçage de l'installation — projet PAY
+1. Schéma
+  [OK]    tables créées (DDL rejoué une fois)
+2. Politique
+  [OK]    zones et règles chargés, aucun refus
+3. État
+  [OK]    chaîne du journal intacte
+  état : {"projectId":"PAY","rules":14,"zones":7,"permits":0,"ledgerEntries":26,"pendingRequests":3,"chainValid":true,"chainChecked":26,"storage":"auto"}
+Amorçage : 3 OK, 0 échec(s)
+```
+
+**Where the evidence lives.** `scripts/bootstrap-installation.sh`,
+`scripts/deploy.sh --environment <env>` (it records the published version in
+`~/.atlassian/permis-deploy-state.json`), and the live mode of `scripts/verify-claims.mjs`,
+which now checks the versions quoted in the docs against that file:
+
+```console
+✔ app-version  docs/SUBMISSION.md:121  doc: version=2.25.0 env=development  réel: version=2.25.0
+✔ app-version  docs/SUBMISSION.md:122  doc: version=2.1.0 env=production  réel: version=2.1.0
+✔ live-replay  docs/SUBMISSION.md:126  doc: checks=26  réel: checks=26
+```
+
+---
+
+## 3. The live harness passes against the real installation (12 November 2026)
 
 **What was run.** `bash scripts/regression-live.sh` — 26 checks against the
 deployed installation, through the real web triggers and Forge SQL, no Jira UI

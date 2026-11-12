@@ -162,12 +162,21 @@ guessing. The secrets themselves stay out of the repository.
 | App id | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
 | Developer Space | `laddition` (`abf72fff-edaf-4259-900c-743702f0d1f2`) |
 | Site | `one-atlas-cndz.atlassian.net` (Jira) |
-| Environment | `development` — app version **2.20.0** (Forge major version 2), deployed 12 November 2026 |
+| Environment | `development` — app version **2.25.0** (Forge major version 2), deployed 12 November 2026 |
 | Installation id | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
+| Environment | `production` — app version **2.1.0**, installed 12 November 2026 (the version a judge installs from the Marketplace) |
+| Installation id | `61ad469d-974c-4c30-a272-7b3416b66262` |
 | Gate URL | `https://<installation>.webtrigger.atlassian.app/public/<gate-key>` — stored locally in `~/.atlassian/permis-gate-url.txt`, mode 600 |
 | Operator URL | same host, separate key — `~/.atlassian/permis-admin-url.txt` |
-| Signing secret | app variable `PERMIS_AGENT_SECRET`, encrypted; local copy in `~/.atlassian/permis-signing-secret` |
+| Production URLs | same two files, `…-prod.txt` suffix — `~/.atlassian/permis-gate-url-prod.txt`, `~/.atlassian/permis-admin-url-prod.txt` |
+| Signing secret | app variable `PERMIS_AGENT_SECRET`, encrypted — set **per environment** (`forge variables set -e <env>`), local copy in `~/.atlassian/permis-signing-secret` |
+| Deployed versions | written by `scripts/deploy.sh` to `~/.atlassian/permis-deploy-state.json` — the file the docs auditor checks |
 | CLI credentials | `FORGE_EMAIL` + `FORGE_API_TOKEN` (no keychain on this host, so the CLI uses environment variables) |
+
+> A **new installation starts empty**: no tables, no policy. `scripts/bootstrap-installation.sh`
+> performs the two operator actions that make it usable (`bootstrap-schema`, then `seed-policy`
+> from `examples/policy/seed-payments.json`) and prints the resulting state. It is idempotent —
+> re-running it against a live installation changes nothing and still passes.
 
 Commands actually used:
 
@@ -177,9 +186,10 @@ export FORGE_API_TOKEN="$(tr -d '\r\n' < ~/.atlassian-api-token)"
 export PATH=~/tools/node-v26.12.1-linux-x64/bin:$PATH   # Node >= 26.12.1 for the CLI
 ```
 
-> The app version is printed by `forge deploy` (`The version of your app [2.20.0] …`); it is not
+> The app version is printed by `forge deploy` (`The version of your app [2.25.0] …`); it is not
 > stored in `manifest.yml` or `package.json`, and `forge version list` shows only major versions.
-> Read it from the deployment command.
+> Read it from the deployment command — `scripts/deploy.sh` does that for you and records it in
+> `~/.atlassian/permis-deploy-state.json`.
 >
 > The Node version matters: the CLI refuses `^22.23.4 || ^24.22.1 || >=26.12.1` outside that
 > range, and the `node` first in `PATH` on this host is **26.9.0** — the CLI answers
@@ -208,6 +218,24 @@ forge webtrigger create -f gate  -s one-atlas-cndz.atlassian.net -p jira
 forge webtrigger create -f admin -s one-atlas-cndz.atlassian.net -p jira
 forge logs -e development -n 40
 ```
+
+The same sequence, for production — note that the **app variable is per environment**, so it has
+to be set again before the production deployment, and the deployment has to be redone for the new
+variable to apply:
+
+```bash
+forge variables set PERMIS_AGENT_SECRET "$(cat ~/.atlassian/permis-signing-secret)" --encrypt -e production
+forge deploy -e production --non-interactive
+forge install --site one-atlas-cndz.atlassian.net --product jira -e production --non-interactive
+forge webtrigger create -f gate  -e production -s one-atlas-cndz.atlassian.net -p jira
+forge webtrigger create -f admin -e production -s one-atlas-cndz.atlassian.net -p jira
+
+# the production installation starts empty — schema, then policy
+PERMIS_ADMIN_FILE=~/.atlassian/permis-admin-url-prod.txt bash scripts/bootstrap-installation.sh
+```
+
+`scripts/deploy.sh --environment <development|production>` does the same thing and records the
+published version in `~/.atlassian/permis-deploy-state.json`.
 
 ### The operator entry point
 
