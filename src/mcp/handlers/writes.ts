@@ -9,7 +9,13 @@ import { defaultLevelFor } from '../../core/catalog';
 import { makeEntry } from '../../core/ledger';
 import { maskSecrets } from '../../core/mask';
 import { parsePlan } from '../../core/plan';
+import { newPermitId } from '../../core/permits';
 import { ActionRequest, ApprovalRequest } from '../../core/types';
+import {
+  delegatePermit as buildChildPermit,
+  recordDelegation,
+  withParent,
+} from '../../services/delegation';
 import {
   buildCaller,
   getRuntime,
@@ -20,6 +26,16 @@ import {
   toJson,
 } from '../runtime';
 import { HandlerArgs } from './reads';
+
+/** Cap on the plan text journalled with a submission: the ledger is not a document store. */
+const PLAN_TEXT_LIMIT = 2000;
+
+/**
+ * Default life of a delegated permit: short, because a sub-agent runs one
+ * bounded task. The service still refuses anything that would outlive the
+ * parent, so this is only a default, never a widening.
+ */
+const DEFAULT_DELEGATION_TTL = 30;
 
 /** request-approval — create the request and tell the agent what to do next. */
 export async function requestApproval({ payload, context }: HandlerArgs): Promise<string> {
@@ -148,6 +164,10 @@ export async function submitPlan({ payload, context }: HandlerArgs): Promise<str
     actions: actions.length,
     approvalsNeeded: needsApproval.length,
     requestId: grouped?.id,
+    // The plan text is journalled so drift detection can compare an observed
+    // change with the approved plan later on (see planActionsFrom). Masked and
+    // capped: the ledger is not a place to store a document.
+    plan: maskSecrets(planText).slice(0, PLAN_TEXT_LIMIT),
   });
   return toJson({
     actions: decisions.map((entry2) => ({
@@ -240,4 +260,75 @@ async function approverRolesFor(
     .filter((rule) => rule.actionClass === actionClass && rule.approverRole)
     .map((rule) => rule.approverRole as string);
   return roles.length > 0 ? Array.from(new Set(roles)) : ['project-admin'];
+}
+
+/**
+ * delegate-permit — a parent permit yields a narrower one to a sub-agent
+ * (spec §26). Widening is refused with an explicit code, so the answer is
+ * always explainable. The parent link is not a column of the permit table: it
+ * is journalled by `recordDelegation`, which is the tamper-evident place for a
+ * chain of custody.
+ */
+export async function delegatePermit({ payload, context }: HandlerArgs): Promise<string> {
+  const runtime = await getRuntime();
+  const parentId = typeof payload?.parentPermitId === 'string' ? payload.parentPermitId : '';
+  const childProfileId = typeof payload?.childProfileId === 'string' ? payload.childProfileId : '';
+  const target = typeof payload?.target === 'string' ? payload.target : '';
+  if (!parentId || !childProfileId || !target) {
+    return toJson({
+      ok: false,
+      error: 'MISSING_INPUT',
+      note: 'parentPermitId, childProfileId and target are all required.',
+    });
+  }
+
+  const permits = await runtime.repos.permits.listPermits({});
+  const parent = permits.find((item) => item.id === parentId);
+  if (!parent) return toJson({ ok: false, error: 'PARENT_NOT_FOUND', parentPermitId: parentId });
+
+  const issuedAt = runtime.now();
+  const year = new Date(issuedAt).getUTCFullYear();
+  const sequence = await runtime.repos.permits.nextPermitSequence(year);
+  const result = buildChildPermit(
+    parent,
+    {
+      id: newPermitId(sequence, year),
+      childProfileId,
+      actionClass: typeof payload?.actionClass === 'string' ? payload.actionClass : undefined,
+      target,
+      issuedAt,
+      ttlMinutes: Number(payload?.ttlMinutes) > 0 ? Number(payload.ttlMinutes) : DEFAULT_DELEGATION_TTL,
+      uses: Number(payload?.uses) > 0 ? Number(payload.uses) : 1,
+    },
+    runtime.secret,
+    issuedAt,
+  );
+
+  if (!result.permit) {
+    return toJson({
+      ok: false,
+      error: result.error,
+      parentPermitId: parentId,
+      note: 'A sub-agent never receives more than its parent holds: class, target, expiry and uses can only narrow.',
+    });
+  }
+
+  await runtime.repos.permits.savePermit(withParent(result.permit, parent.id));
+  const entry = await recordDelegation(runtime.repos, parent, result.permit, {
+    projectId: parent.scope.projectId,
+    childProfileId,
+    pilotAccountId: resolveAccountId(context),
+    at: issuedAt,
+  });
+  return toJson({
+    ok: true,
+    permitId: result.permit.id,
+    parentPermitId: parent.id,
+    childProfileId,
+    scope: result.permit.scope,
+    expiresAt: result.permit.expiresAt,
+    usesLeft: result.permit.usesLeft,
+    seq: entry.seq,
+    note: 'The child permit is signed and journalled. Cite it in the sub-agent work; it cannot outlive its parent.',
+  });
 }

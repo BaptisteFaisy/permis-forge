@@ -173,7 +173,7 @@ Second question: *"Is an agent allowed to modify the CI here?"* — answer cites
 
 **Voice-over (≈75 words, 30 s).**
 "For humans who will never open the ledger: a Rovo agent. 'What did the agents do on this
-project this week?' It answers from the same eight tools the coding agents use, always citing
+project this week?' It answers from the same twelve tools the coding agents use, always citing
 the rule and the request behind each answer.
 'Can an agent touch the CI here?' The reply names the class, the level, and what approval would
 require. Same registry, same engine — one for acting, one for asking."

@@ -1,5 +1,5 @@
 /**
- * Runtime description of the eight MCP tools.
+ * Runtime description of the twelve MCP tools.
  *
  * The manifest (manifest.yml) is the source of truth for Forge; this file is
  * the runtime mirror used by the handlers, the docs and the CI manifest check
@@ -119,6 +119,60 @@ export const TOOLS: ToolDefinition[] = [
     description: 'Trust capital of an agent profile: score, status and current effects on autonomy levels.',
     inputs: [
       { name: 'agentProfile', type: 'string', required: true, description: 'Agent profile id, e.g. claude-code-payments.' },
+    ],
+  },
+  {
+    key: 'detect-drift',
+    name: 'Detect drift',
+    verb: 'GET',
+    description:
+      'Compare observed changes (a CI diff, a git log) with the actions declared on the ticket and the approved plan. Read-only: recording a deviation is an operator action.',
+    inputs: [
+      { name: 'issueKey', type: 'string', required: true, description: 'Jira issue key, e.g. PAY-123.' },
+      {
+        name: 'changes',
+        type: 'string',
+        required: true,
+        description: 'JSON array of observed changes: [{"path":"db/migrations/001.sql","source":"ci-diff"}].',
+      },
+      { name: 'projectKey', type: 'string', required: false, description: 'Jira project key, e.g. PAY.' },
+    ],
+  },
+  {
+    key: 'delegate-permit',
+    name: 'Delegate permit',
+    verb: 'CREATE',
+    description:
+      'Give a sub-agent a permit narrower than your own: class, target, expiry and uses can only narrow. Any widening is refused with an explicit code.',
+    inputs: [
+      { name: 'parentPermitId', type: 'string', required: true, description: 'Your own permit, e.g. PA-2026-000417.' },
+      { name: 'childProfileId', type: 'string', required: true, description: 'Agent profile of the sub-agent.' },
+      {
+        name: 'target',
+        type: 'string',
+        required: true,
+        description: 'Exact target the sub-agent needs; it must be covered by the parent scope.',
+      },
+      {
+        name: 'actionClass',
+        type: 'string',
+        required: false,
+        description: 'A stricter class than the parent, e.g. A-08. Defaults to the parent class.',
+      },
+      { name: 'ttlMinutes', type: 'integer', required: false, description: 'Minutes; cannot outlive the parent. Default 30.' },
+      { name: 'uses', type: 'integer', required: false, description: 'Uses; cannot exceed the parent remaining uses. Default 1.' },
+    ],
+  },
+  {
+    key: 'suggest-policy',
+    name: 'Suggest policy',
+    verb: 'GET',
+    description:
+      'Policy changes the history supports, with their evidence: grant rate, incidents, what observation mode would have blocked. Read-only — applying a rule is class A-15.',
+    inputs: [
+      { name: 'projectKey', type: 'string', required: false, description: 'Jira project key, e.g. PAY.' },
+      { name: 'issueKey', type: 'string', required: false, description: 'Jira issue key, used to infer the project.' },
+      { name: 'days', type: 'integer', required: false, description: 'Window analysed, in days. Default 30.' },
     ],
   },
 ];

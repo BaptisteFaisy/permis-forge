@@ -20,7 +20,7 @@ policy you can read, approve on the ticket, and audit afterwards:
 - **trust capital** lets a well-behaved agent profile earn a bit more autonomy — and never opens a
   forbidden class.
 
-The agent side is served by a **Rovo MCP module** (eight tools) and, more importantly, by a
+The agent side is served by a **Rovo MCP module** (twelve tools) and, more importantly, by a
 **Claude Code `PreToolUse` hook**: the agent does not decide whether it may act — the app does.
 
 > Codegeist 2026 — *Apps for Software Teams* (MCP bonus).
@@ -172,7 +172,7 @@ slowly back towards 50 when there is no activity. Every variation is explained i
 
 ---
 
-## The nine MCP tools
+## The twelve MCP tools
 
 Exposed by the `rovo:mcp` module (`tools:` in `manifest.yml`).
 
@@ -187,6 +187,9 @@ Exposed by the `rovo:mcp` module (`tools:` in `manifest.yml`).
 | `submit-plan` | CREATE | `issueKey`, `plan` | Decision per action, grouped request |
 | `create-hook-token` | CREATE | `label` | The caller's personal gate token, shown once (only its hash is stored) |
 | `get-agent-standing` | GET | `agentProfile` | Trust capital and current effects |
+| `detect-drift` | GET | `issueKey`, `changes`, `projectKey` | Gaps between the observed changes and the declarations and plan — reads only, journals nothing |
+| `delegate-permit` | CREATE | `parentPermitId`, `childProfileId`, `target`, `actionClass`, `ttlMinutes`, `uses` | A narrower child permit, or the explicit code saying why the widening was refused |
+| `suggest-policy` | GET | `projectKey`, `issueKey`, `days` | The proposals the history supports, with their evidence — applying one is an operator action |
 
 An agent waiting for an approval does **not** poll `get-request-status`: its instructions tell it
 to stop, announce the request number, and resume when the pilot comes back to it.
@@ -216,7 +219,7 @@ Point 2 is the main one: see [`docs/HOOK-SETUP.md`](docs/HOOK-SETUP.md).
 | `src/core/` | Pure TypeScript decision logic — no Atlassian SDK import. Action-class catalogue, path matching, approvals, kill switch, trust capital, plan-first evaluation, hook mapping. | Present |
 | `src/storage/` | Persistence adapters over Forge SQL (`@forge/sql`), plus an in-memory adapter used by the tests. | Schema and in-memory adapter present |
 | `src/ui/` | Forge resolvers for the issue panel, project settings page, project page, global page, personal settings page and the simulation console. | In progress |
-| `src/mcp/` | Handlers for the nine MCP tools of the `rovo:mcp` module. | Present (6 read tools, 3 write tools) |
+| `src/mcp/` | Handlers for the twelve MCP tools of the `rovo:mcp` module. | Present (7 read tools, 4 write tools, 1 token tool) |
 | `src/hooks/` | The `webtrigger` gate handler used by the client hook and by CI verification. | Present |
 | `src/triggers.ts` | Issue-update trigger and nightly maintenance (permit expiry, trust erosion, chain verification). | Present |
 | `src/index.ts` | Entry point: wires repositories, services and module handlers together. | Present |
@@ -353,7 +356,7 @@ acceptance scenarios of §21 run end to end with `node scripts/demo.mjs`.
 | PA-05 | Prevent the pilot from approving their own request | M | **Implemented** — `src/core/approvals.ts`, and the mutation recomputes the pilot flag from the request itself |
 | PA-06 | Issue, decrement, expire and revoke signed permits | M | **Implemented** — `src/core/permits.ts` (HMAC-SHA256 over the granted scope), `src/services/approvals-service.ts`, nightly expiry in `src/triggers.ts` |
 | PA-07 | Chained, browsable and exportable ledger | M | **Implemented** — `src/core/ledger.ts` (SHA-256 chain over canonical JSON), `src/storage/queue.ts` (single-consumer writer), `src/ui/audit.ts` (verification, CSV, Confluence export), filters and pagination on `projectPage` |
-| PA-08 | MCP tools of §14 | M | **Implemented** — the eight tools in `src/mcp/`, wired in `src/index.ts` and declared in `manifest.yml`; the manifest/code guard runs in CI |
+| PA-08 | MCP tools of §14 | M | **Implemented** — the twelve tools in `src/mcp/`, wired in `src/index.ts` and declared in `manifest.yml`; the manifest/code guard runs in CI |
 | PA-09 | Hook entry point with a personal token, plus the generated hooks file | M | **Implemented** — `src/hooks/gate.ts` (token hashed, unknown token refused), `personalSettings` issues a token shown once, `buildHookFile` generates the file, examples for Claude Code and Cursor |
 | PA-10 | Kill switch per project | M | **Implemented** — `src/core/killswitch.ts` plus the organisation switch on `globalPage`; permits suspended, requests frozen, reason and different-person rules enforced |
 | PA-11 | Simulation console: enter an action, see the decision and the rule | M | **Implemented** — `simulationConsole`, side-effect free, and proven to answer like the MCP tool (scenario 10) |
@@ -365,9 +368,9 @@ acceptance scenarios of §21 run end to end with `node scripts/demo.mjs`.
 | PA-17 | Precedents shown on the request card | S | **Implemented** — `src/services/precedents.ts`: similar requests, outcome, approvers, permit, decision delay and what happened next |
 | PA-18 | Organisation policy floor | S | **Implemented** — a project may harden but never soften: the org rule wins when it is stricter (`source: 'org-floor'`) |
 | PA-19 | Verify a permit from a CI step | S | **Implemented** — the gate answers a `{ permitId }` POST with signature, expiry, revocation and remaining uses |
-| PA-20 | Detect sensitive actions that were not declared | C | **Implemented** — `src/services/drift.ts`: observed changes classified by the real classifier, compared with declarations and the approved plan, penalised once and journaled |
-| PA-21 | Propose a policy from the history | C | **Implemented** — `src/services/policy-suggestions.ts`: evidence-backed proposals, observe before hardening, never a locked class, never above the org floor |
-| PA-22 | Delegation: a sub-agent receives a narrower permit than its parent | C | **Implemented** — `src/services/delegation.ts`: any widening refused with an explicit code, and the whole chain verifiable |
+| PA-20 | Detect sensitive actions that were not declared | C | **Implemented and reachable** — `src/services/drift.ts` behind the `detect-drift` MCP tool (read-only); recording a gap is the operator action `apply-drift`, because it moves the trust capital |
+| PA-21 | Propose a policy from the history | C | **Implemented and reachable** — `src/services/policy-suggestions.ts` behind the `suggest-policy` MCP tool; applying one is the operator action `apply-suggestion` (writing a rule is A-15, N0) |
+| PA-22 | Delegation: a sub-agent receives a narrower permit than its parent | C | **Implemented and reachable** — `src/services/delegation.ts` behind the `delegate-permit` MCP tool: any widening refused with an explicit code, the parent link journalled in the ledger |
 
 **Deployed and validated live.** The app runs on Jira: `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341`,
 installed on `one-atlas-cndz.atlassian.net` (development environment, app version 2.20.0,

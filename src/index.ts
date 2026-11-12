@@ -2,7 +2,7 @@
  * Entry point of the Forge app — every handler referenced by manifest.yml.
  *
  * Three families:
- * 1. the eight MCP actions (rovo:mcp / action), re-exported as they are;
+ * 1. the twelve MCP actions (rovo:mcp / action), re-exported as they are;
  * 2. the resolvers of the six Jira screens (issue panel, project settings,
  *    project page, simulation console, global page, personal settings);
  * 3. the hook gate (web trigger) and the two triggers.
@@ -23,8 +23,10 @@ export {
   getRequestStatus,
   listPermits,
   getAgentStanding,
+  detectDrift,
+  suggestPolicy,
 } from './mcp/handlers/reads';
-export { requestApproval, declareAction, submitPlan } from './mcp/handlers/writes';
+export { requestApproval, declareAction, submitPlan, delegatePermit } from './mcp/handlers/writes';
 export { createToken } from './mcp/handlers/token';
 
 // ------------------------------------------------------------------- écrans

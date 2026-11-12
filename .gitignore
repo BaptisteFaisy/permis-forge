@@ -1,4 +1,6 @@
-node_modules/
+node_modules
+# (sans slash : un worktree git lie node_modules par un lien symbolique, que
+#  « node_modules/ » n’attrape pas)
 dist/
 build/
 coverage/

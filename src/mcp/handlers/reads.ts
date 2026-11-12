@@ -7,7 +7,10 @@
  * boolean, always with the reason (spec §19 Explicabilité).
  */
 import { ACTION_CLASSES, defaultLevelFor, levelName } from '../../core/catalog';
-import { ActionRequest, Permit } from '../../core/types';
+import { parsePlan } from '../../core/plan';
+import { ActionRequest, LedgerEntry, Permit, PlanAction } from '../../core/types';
+import { detectDrift as detectDriftReport, ObservedChange } from '../../services/drift';
+import { suggestPolicyChanges } from '../../services/policy-suggestions';
 import {
   buildCaller,
   getRuntime,
@@ -175,4 +178,107 @@ function trustEffects(score: number): string[] {
 /** Default level of a class, used by the policy summary. */
 export function defaultLevelLabel(code: string): string {
   return levelName(defaultLevelFor(code), 'en');
+}
+
+// --------------------------------------------------- dérive et suggestions
+
+/** Parse the `changes` input: a JSON array of `{ path?, command?, source? }`. */
+export function parseChanges(raw: unknown): ObservedChange[] | undefined {
+  if (Array.isArray(raw)) return raw.every(isChange) ? raw : undefined;
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every(isChange) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isChange(value: unknown): value is ObservedChange {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.path === 'string' || typeof item.command === 'string';
+}
+
+/**
+ * Actions of the last plan submitted on this ticket, recovered from the ledger.
+ * Without them the "out of plan" half of drift detection has nothing to compare
+ * against — which is why `submit-plan` journals the plan text (masked, capped).
+ */
+export function planActionsFrom(entries: LedgerEntry[], issueKey?: string): PlanAction[] {
+  const submissions = entries.filter(
+    (entry) => entry.kind === 'plan-submitted' && (issueKey === undefined || entry.issueId === issueKey),
+  );
+  const last = submissions[submissions.length - 1];
+  const detail = last?.detail as Record<string, unknown> | undefined;
+  return typeof detail?.plan === 'string' ? parsePlan(detail.plan) : [];
+}
+
+/**
+ * detect-drift — compare what was observed with what was declared (spec §10,
+ * enforcement point 4). Read-only on purpose: recording a deviation moves the
+ * trust capital, and an agent must never move its own standing. That is the
+ * operator's `apply-drift` action.
+ */
+export async function detectDrift({ payload, context }: HandlerArgs): Promise<string> {
+  const runtime = await getRuntime();
+  const issueKey = resolveIssueKey(context, payload);
+  const projectId = resolveProjectId({ issueKey, projectKey: payload?.projectKey });
+  const changes = parseChanges(payload?.changes);
+  if (changes === undefined) {
+    return toJson({
+      error: 'CHANGES_INVALID',
+      note: 'changes must be a JSON array of objects carrying a "path" or a "command".',
+    });
+  }
+  const entries = await runtime.repos.ledger.list({ projectId, issueId: issueKey });
+  const report = await detectDriftReport({
+    projectId,
+    issueKey,
+    profileId: resolveProfileId(payload),
+    pilotAccountId: resolveAccountId(context),
+    changes,
+    declared: entries.filter((entry) => entry.kind === 'action-declared'),
+    planActions: planActionsFrom(entries, issueKey),
+    at: runtime.now(),
+  });
+  return toJson({
+    ...report,
+    recorded: false,
+    note:
+      report.items.length === 0
+        ? 'Every sensitive observed change is declared.'
+        : 'Nothing was journaled: recording a deviation and moving the trust capital is an operator action (apply-drift).',
+  });
+}
+
+/**
+ * suggest-policy — the proposals the history supports (spec §26). Reading them
+ * is open; applying them is not. Writing a rule is class A-15 (N0), so only the
+ * operator endpoint can apply a suggestion, and it refuses a locked class.
+ */
+export async function suggestPolicy({ payload, context }: HandlerArgs): Promise<string> {
+  const runtime = await getRuntime();
+  const issueKey = resolveIssueKey(context, payload);
+  const projectId = resolveProjectId({ issueKey, projectKey: payload?.projectKey });
+  const days = typeof payload?.days === 'number' && payload.days > 0 ? payload.days : undefined;
+  const suggestions = await suggestPolicyChanges(runtime.repos, projectId, days ? { days } : {});
+  return toJson({
+    projectId,
+    count: suggestions.length,
+    suggestions: suggestions.map((item) => ({
+      id: item.id,
+      actionClass: item.actionClass,
+      currentLevel: `N${item.currentLevel}`,
+      proposedLevel: `N${item.proposedLevel}`,
+      proposedMode: item.proposedMode,
+      direction: item.direction,
+      evidence: item.evidence,
+      risk: item.risk,
+    })),
+    note:
+      suggestions.length === 0
+        ? 'No class has enough history yet to propose a change.'
+        : 'An agent cannot apply these: writing a rule is class A-15 (N0). An operator applies one with the apply-suggestion action.',
+  });
 }

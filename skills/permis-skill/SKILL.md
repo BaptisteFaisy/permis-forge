@@ -1,7 +1,7 @@
 ---
 name: permis-skill
 description: Avant d'agir sur un dépôt, demande la permission de chaque action sensible à l'app « Permis d'agir », respecte le permis obtenu (portée, durée, usages) et déclare l'action après coup. À utiliser dès qu'une clé de ticket est citée ou qu'une action sort de la lecture.
-allowed-tools: check-permission get-policy request-approval get-request-status list-permits create-hook-token declare-action submit-plan get-agent-standing
+allowed-tools: check-permission get-policy request-approval get-request-status list-permits create-hook-token declare-action submit-plan get-agent-standing detect-drift delegate-permit suggest-policy
 ---
 
 # Permis d'agir (permis-skill)
@@ -51,7 +51,7 @@ classe. Le même vaut pour A-15 (la politique et les hooks) : elle est fermée.
 3. Ne boucle jamais sur `get-request-status` : une demande en attente
    attend un humain, pas une polling loop.
 
-## Les huit outils, et quand t'en servir
+## Les douze outils, et quand t'en servir
 
 | Outil | Quand l'appeler | Ce que tu en fais |
 |---|---|---|
@@ -64,6 +64,9 @@ classe. Le même vaut pour A-15 (la politique et les hooks) : elle est fermée.
 | `create-hook-token` | à l'installation du hook sur un poste | tu obtiens le jeton personnel du pilote, affiché une seule fois |
 | `declare-action` | après chaque action exécutée | tu rends le journal complet ; l'oubli coûte du capital |
 | `get-agent-standing` | quand tu veux savoir où tu en es | tu lis ton score et les effets en cours sur tes niveaux |
+| `delegate-permit` | avant de lancer un sous-agent sur une tâche sensible | tu lui donnes un permis **plus étroit** que le tien ; tout élargissement est refusé avec un code explicite |
+| `detect-drift` | quand une CI ou un `git log` te donne les changements réellement observés | tu compares avec ce qui a été déclaré et le plan approuvé ; l'outil **ne journalise rien** — c'est un opérateur qui enregistre un écart |
+| `suggest-policy` | quand le pilote demande si la politique devrait évoluer | tu lis les propositions et leurs preuves ; **tu ne les appliques jamais** : écrire une règle est la classe A-15 (N0) |
 
 ## En cas de doute
 
