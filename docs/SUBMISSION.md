@@ -75,12 +75,12 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 
 | Bonus | Claimed | Justification (manifest module) |
 |---|---|---|
-| **MCP (principal)** | Yes | The `rovo:mcp` module `permis-mcp` in `manifest.yml` exposes the nine `action` entries as MCP tools, connectable from any third-party MCP client at `https://mcp.atlassian.com/forge/<appId>` over OAuth 2.1, after an administrator enables external exposure for the installation. The hook and the Rovo agent consume the same tools. |
-| **Agents Rovo** | Yes | The `rovo:agent` module `permis-agent` answers humans in Rovo Chat ("What did the agents do this week?", "Why was request RQ-2026-000417 refused?") using the nine tools, guided by the `rovo:skill` module `permis-skill` and its prompt's safety rules (never unlock A-10/A-12/A-15, always cite the rule). |
+| **MCP (principal)** | Yes | The `rovo:mcp` module `permis-mcp` in `manifest.yml` exposes the twelve `action` entries as MCP tools, connectable from any third-party MCP client at `https://mcp.atlassian.com/forge/<appId>` over OAuth 2.1, after an administrator enables external exposure for the installation. The hook and the Rovo agent consume the same tools. |
+| **Agents Rovo** | Yes | The `rovo:agent` module `permis-agent` answers humans in Rovo Chat ("What did the agents do this week?", "Why was request RQ-2026-000417 refused?") using the twelve tools, guided by the `rovo:skill` module `permis-skill` and its prompt's safety rules (never unlock A-10/A-12/A-15, always cite the rule). |
 | **Marketplace** | Yes | A single Forge app installed on Jira, no external service to run; free during the hackathon. The draft listing — including the permissions justification, the privacy statement and the honest egress declaration — is in [`MARKETPLACE.md`](MARKETPLACE.md). |
 | **Teamwork Graph (optional)** | Not claimed for v1 | No Teamwork Graph module is declared in `manifest.yml` at submission time. It is kept as an optional future integration (surfacing permits and agent profiles as graph entities); we do not claim the bonus for something that is not built. |
 
-## The nine MCP tools
+## The twelve MCP tools
 
 | Tool | What it is for |
 |---|---|
@@ -93,13 +93,16 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 | `submit-plan` | Submit a whole plan; get a decision per action and one grouped approval request. |
 | `create-hook-token` | Mint the caller's personal gate token; shown once, only its hash is stored. |
 | `get-agent-standing` | Trust capital of an agent profile and its current effects on autonomy. |
+| `detect-drift` | Compare the observed changes (a CI diff, a git log) with what was declared and the approved plan. Read-only: recording a deviation moves the trust capital and belongs to an operator. |
+| `delegate-permit` | Give a sub-agent a permit narrower than your own. Class, target, expiry and uses can only narrow; any widening is refused with an explicit code. |
+| `suggest-policy` | The policy changes the history supports, with their evidence. Reading only — writing a rule is class A-15 (N0), so an operator applies it. |
 
 ---
 
 ## How we built it
 
 - **One Atlassian Forge app installed on Jira** — TypeScript, strict mode (`tsconfig.json`), no external backend.
-- **`rovo:mcp` + `action`**: the nine tools are declared once as `action` entries (strings/numbers/booleans only, per platform limits) and reused by the MCP server, the `rovo:skill`, the `rovo:agent`, and the UI.
+- **`rovo:mcp` + `action`**: the twelve tools are declared once as `action` entries (strings/numbers/booleans only, per platform limits) and reused by the MCP server, the `rovo:skill`, the `rovo:agent`, and the UI.
 - **`webtrigger` (`gate`, urlFormat v2, dynamic response)**: the HTTP entry point called by the Claude Code `PreToolUse` hook (`type: "http"`, `onFailure: "block"`, `Authorization: Bearer $PERMIS_AGENT_TOKEN`) and by CI verification. Web triggers have no platform authentication, so the personal token — stored only as a hash — identifies the pilot.
 - **Forge SQL (mysql engine), 9 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
 - **Hash-chained ledger, SHA-256**: `hash = sha256(canonical_json(entry))`, genesis = 64 zeroes, verified nightly by the `scheduledTrigger` (`src/core/ledger.ts`).

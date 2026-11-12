@@ -102,6 +102,24 @@ SC=$(admin "{\"action\":\"screen\",\"screen\":\"simulationConsole\",\"projectId\
   | python3 -c 'import json,sys;r=json.load(sys.stdin)["result"];print(r["classification"]["actionClass"], r["level"])')
 [ "$SC" = "A-08 2" ] && check "console de simulation : A-02 reclassé A-08/N2" 1 || check "console de simulation ($SC)" 0
 
+echo "4. Dérive et politique (opérateur)"
+DRIFT_BODY='{"action":"apply-drift","projectId":"'"$PROJECT"'","issueKey":"'"$ISSUE"'","profileId":"regression","changes":[{"path":"db/migrations/950_drift.sql","source":"regression"}],"by":"regression"}'
+D=$(admin "$DRIFT_BODY")
+[ "$(printf '%s' "$D" | field penalized)" = "1" ] \
+  && check "dérive : un écart non déclaré est pénalisé et journalisé" 1 \
+  || check "dérive non enregistrée ($(printf '%s' "$D" | head -c 100))" 0
+D2=$(admin "$DRIFT_BODY")
+[ "$(printf '%s' "$D2" | field penalized)" = "0" ] \
+  && check "dérive idempotente : le même écart ne pénalise pas deux fois" 1 \
+  || check "dérive non idempotente (penalized=$(printf '%s' "$D2" | field penalized))" 0
+CODE=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST "$ADMIN" -H 'Content-Type: application/json' \
+  -H "X-Permis-Admin: $SEC" -d '{"action":"apply-suggestion","projectId":"'"$PROJECT"'","suggestionId":"whatever"}')
+[ "$CODE" = "400" ] && check "suggestion appliquée sans auteur nommé : refus 400" 1 || check "suggestion sans auteur ($CODE)" 0
+E=$(admin '{"action":"apply-suggestion","projectId":"'"$PROJECT"'","suggestionId":"PAY-A-05-relax","by":"regression"}')
+[ "$(printf '%s' "$E" | field error)" = "SUGGESTION_NOT_FOUND" ] \
+  && check "suggestion inconnue : 404 plutôt qu'une règle inventée" 1 \
+  || check "suggestion inconnue ($(printf '%s' "$E" | head -c 100))" 0
+
 echo
 echo "Régression live : $ok OK, $ko échec(s)"
 [ "$ko" = "0" ] || exit 1

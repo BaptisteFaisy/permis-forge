@@ -59,7 +59,9 @@ submission.
 3. Call `check-permission` with an `issueKey`, an `actionClass` and a `target`, then compare the
    answer with the simulation console for the same action (scenario 10).
 4. Optionally call `get-policy`, `request-approval`, `get-request-status`, `list-permits`,
-   `declare-action`, `submit-plan` and `get-agent-standing`.
+   `declare-action`, `submit-plan`, `get-agent-standing`, `detect-drift`, `delegate-permit`
+   and `suggest-policy`. The last three are read-only: recording a deviation and applying a
+   policy change are operator actions, never agent ones.
 
 A tool runs with the rights of the user who authorised the client, and the identity is read from
 the call context — never from the inputs.

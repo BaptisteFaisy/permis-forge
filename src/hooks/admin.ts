@@ -20,7 +20,10 @@
  */
 import { timingSafeEqual } from 'crypto';
 import { approveRequest, createHookToken, denyRequest, revokePermit } from '../services/approvals-service';
+import { applyDrift, detectDrift as detectDriftReport } from '../services/drift';
+import { applySuggestion, suggestPolicyChanges } from '../services/policy-suggestions';
 import { applySeed, planSeed } from '../services/seed-policy';
+import { parseChanges, planActionsFrom } from '../mcp/handlers/reads';
 import { verifyChain } from '../core/ledger';
 import { Repositories } from '../core/types';
 import { getRuntimeSync } from '../mcp/runtime';
@@ -117,15 +120,58 @@ async function status(repos: Repositories, projectId: string): Promise<Record<st
   };
 }
 
-/** Dispatch one operator command. */
+/** Dispatch one operator command: reads first, then writes. */
 async function dispatch(repos: Repositories, secret: string, body: any): Promise<WebTriggerResponse> {
   const action = String(body?.action ?? '');
   const projectId = typeof body?.projectId === 'string' ? body.projectId : 'unknown';
+  return (
+    (await dispatchRead(repos, action, projectId, body)) ??
+    (await dispatchWrite(repos, secret, action, projectId, body)) ??
+    respond(400, { error: 'UNKNOWN_ACTION', allowed: ALLOWED_ACTIONS })
+  );
+}
 
+/** Every action an operator may call; also the answer to an unknown one. */
+const ALLOWED_ACTIONS = [
+  'status',
+  'health',
+  'screen',
+  'bootstrap-schema',
+  'seed-policy',
+  'mint-token',
+  'approve-request',
+  'deny-request',
+  'revoke-permit',
+  'apply-drift',
+  'apply-suggestion',
+];
+
+/** Read-only commands: they change nothing, so they are safe to replay. */
+async function dispatchRead(
+  repos: Repositories,
+  action: string,
+  projectId: string,
+  body: any,
+): Promise<WebTriggerResponse | undefined> {
   if (action === 'status') return respond(200, await status(repos, projectId));
 
   if (action === 'health') return respond(200, { projectId, tables: await health(repos, projectId) });
 
+  // Read-only view of a Jira screen, so the screen data path can be checked
+  // against the real Forge SQL backend without opening a browser.
+  if (action === 'screen') return renderScreen(repos, body);
+
+  return undefined;
+}
+
+/** Commands that write: schema, tokens, approvals, policy and drift. */
+async function dispatchWrite(
+  repos: Repositories,
+  secret: string,
+  action: string,
+  projectId: string,
+  body: any,
+): Promise<WebTriggerResponse | undefined> {
   // Create the tables and seed the organisation floor once, right after a first
   // install, so the first real decision does not pay for the DDL.
   if (action === 'bootstrap-schema') {
@@ -150,12 +196,6 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
     return respond(outcome.ok ? 200 : 404, { ok: outcome.ok, permitId: body?.permitId });
   }
 
-  // Read-only view of a Jira screen, so the screen data path can be checked
-  // against the real Forge SQL backend without opening a browser.
-  if (action === 'screen') {
-    return renderScreen(repos, body);
-  }
-
   // Load a policy seed (zones + project rules). Guard rails live in the service:
   // org scope refused, locked classes refused, nothing softer than the floor.
   if (action === 'seed-policy') {
@@ -165,19 +205,68 @@ async function dispatch(repos: Repositories, secret: string, body: any): Promise
     return respond(200, { ...result, projectId: seedProject });
   }
 
-  return respond(400, {
-    error: 'UNKNOWN_ACTION',
-    allowed: [
-      'status',
-      'health',
-      'bootstrap-schema',
-      'seed-policy',
-      'screen',
-      'mint-token',
-      'approve-request',
-      'deny-request',
-      'revoke-permit',
-    ],
+  if (action === 'apply-drift') return applyDriftOperation(repos, projectId, body);
+  if (action === 'apply-suggestion') return applySuggestionOperation(repos, projectId, body);
+
+  return undefined;
+}
+
+/**
+ * Enforcement point 4: record the gaps between what was observed and what was
+ * declared. Reserved to the operator endpoint because it moves the trust
+ * capital, and an agent must never move its own standing.
+ */
+async function applyDriftOperation(
+  repos: Repositories,
+  projectId: string,
+  body: any,
+): Promise<WebTriggerResponse> {
+  const changes = parseChanges(body?.changes);
+  if (changes === undefined) {
+    return respond(400, { error: 'CHANGES_INVALID', note: 'changes must be a JSON array of {path|command}.' });
+  }
+  const issueKey = typeof body?.issueKey === 'string' ? body.issueKey : undefined;
+  const profileId = typeof body?.profileId === 'string' ? body.profileId : 'default';
+  const entries = await repos.ledger.list({ projectId, issueId: issueKey });
+  const report = await detectDriftReport({
+    projectId,
+    issueKey,
+    profileId,
+    changes,
+    declared: entries.filter((entry) => entry.kind === 'action-declared'),
+    planActions: planActionsFrom(entries, issueKey),
+    at: new Date().toISOString(),
+  });
+  const result = await applyDrift(repos, projectId, report, {
+    issueKey,
+    profileId,
+    pilotAccountId: String(body?.by ?? 'operator'),
+  });
+  return respond(200, { projectId, ...report, ...result });
+}
+
+/**
+ * Apply one policy suggestion. Writing a rule is class A-15 (N0): no agent can
+ * call this, and the service still refuses a locked class on its own.
+ */
+async function applySuggestionOperation(
+  repos: Repositories,
+  projectId: string,
+  body: any,
+): Promise<WebTriggerResponse> {
+  const suggestionId = String(body?.suggestionId ?? '');
+  const actor = String(body?.by ?? '');
+  if (!actor) return respond(400, { error: 'ACTOR_REQUIRED', note: 'A policy change must name its author.' });
+  const suggestions = await suggestPolicyChanges(repos, projectId);
+  const suggestion = suggestions.find((item) => item.id === suggestionId);
+  if (!suggestion) return respond(404, { error: 'SUGGESTION_NOT_FOUND', suggestionId });
+  const result = await applySuggestion(repos, suggestion, actor);
+  return respond(result.ok ? 200 : 409, {
+    ok: result.ok,
+    error: result.error,
+    suggestionId,
+    rule: result.rule,
+    seq: result.entry?.seq,
   });
 }
 

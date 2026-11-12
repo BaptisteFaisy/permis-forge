@@ -38,6 +38,12 @@ modules:
       handler: index.getAgentStanding
     - key: create-hook-token-fn
       handler: index.createToken
+    - key: detect-drift-fn
+      handler: index.detectDrift
+    - key: delegate-permit-fn
+      handler: index.delegatePermit
+    - key: suggest-policy-fn
+      handler: index.suggestPolicy
 
     # Écrans
     - key: issue-panel-fn
@@ -268,6 +274,94 @@ modules:
           required: true
           description: "Agent profile id, e.g. claude-code-payments."
 
+    - key: detect-drift
+      name: Detect drift
+      function: detect-drift-fn
+      actionVerb: GET
+      description: >-
+        Compare observed changes (a CI diff, a git log) with the actions
+        declared on the ticket and the approved plan. Read-only: recording a
+        deviation is an operator action, never an agent one.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key, e.g. PAY-123."
+        changes:
+          title: Observed changes
+          type: string
+          required: true
+          description: "JSON array: [{\"path\":\"db/migrations/001.sql\",\"source\":\"ci-diff\"}]."
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: "Jira project key, e.g. PAY."
+
+    - key: delegate-permit
+      name: Delegate permit
+      function: delegate-permit-fn
+      actionVerb: CREATE
+      description: >-
+        Give a sub-agent a permit narrower than your own. Class, target, expiry
+        and uses can only narrow; any widening is refused with an explicit code.
+      inputs:
+        parentPermitId:
+          title: Parent permit
+          type: string
+          required: true
+          description: "Your own permit, e.g. PA-2026-000417."
+        childProfileId:
+          title: Sub-agent profile
+          type: string
+          required: true
+          description: "Agent profile of the sub-agent."
+        target:
+          title: Target
+          type: string
+          required: true
+          description: "Exact target; it must be covered by the parent scope."
+        actionClass:
+          title: Action class
+          type: string
+          required: false
+          description: "A stricter class than the parent, e.g. A-08."
+        ttlMinutes:
+          title: Duration (minutes)
+          type: integer
+          required: false
+          description: "Cannot outlive the parent. Default 30."
+        uses:
+          title: Uses
+          type: integer
+          required: false
+          description: "Cannot exceed the parent remaining uses. Default 1."
+
+    - key: suggest-policy
+      name: Suggest policy
+      function: suggest-policy-fn
+      actionVerb: GET
+      description: >-
+        Policy changes the history supports, with their evidence. Reading only:
+        applying a rule is class A-15 and belongs to an operator.
+      inputs:
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: "Jira project key, e.g. PAY."
+        issueKey:
+          title: Issue key
+          type: string
+          required: false
+          description: "Jira issue key, used to infer the project."
+        days:
+          title: Window (days)
+          type: integer
+          required: false
+          description: "Window analysed, in days. Default 30."
+
   # --------------------------------------------------------------- serveur MCP
   rovo:mcp:
     - key: permis-mcp
@@ -282,6 +376,9 @@ modules:
         - declare-action
         - submit-plan
         - get-agent-standing
+        - detect-drift
+        - delegate-permit
+        - suggest-policy
 
   # ------------------------------------------------------------------- skill
   # Le nom et la description de la skill vivent dans le frontmatter de son
@@ -301,6 +398,9 @@ modules:
           - declare-action
           - submit-plan
           - get-agent-standing
+          - detect-drift
+          - delegate-permit
+          - suggest-policy
 
   # ------------------------------------------------------------------- agent
   rovo:agent:

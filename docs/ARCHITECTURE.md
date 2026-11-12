@@ -12,14 +12,14 @@ trigger used by the client hook.
 ## 1. Forge modules
 
 The manifest follows the sketch of §16; it is validated with `forge lint` before each deployment.
-The nine MCP tools are declared once and reused by three modules — the `action` module (one
+The twelve MCP tools are declared once and reused by three modules — the `action` module (one
 entry per tool, one Forge function each), the `rovo:mcp` server and the `rovo:skill` that tells
 the agent how to use them:
 
 ```yaml
 modules:
   function:                   # one Forge function per tool, per screen, per trigger
-  action:                     # the eight tools, one entry each
+  action:                     # the twelve tools, one entry each
     - key: check-permission
       function: check-permission-fn
       actionVerb: GET
@@ -51,7 +51,7 @@ modules:
 
 | Module | Role |
 |---|---|
-| `action` | The eight tools, one entry each, with their inputs and their verb (GET / CREATE). Forge actions accept only strings, integers, numbers and booleans, and run for 55 s at most. |
+| `action` | The twelve tools, one entry each, with their inputs and their verb (GET / CREATE). Forge actions accept only strings, integers, numbers and booleans, and run for 55 s at most. |
 | `rovo:mcp` | The MCP server exposing those tools to external clients at `https://mcp.atlassian.com/forge/<appId>` (OAuth 2.1, after an administrator activates the installation) |
 | `rovo:skill` | The instructions the agent follows: ask before acting, announce the request number, declare afterwards |
 | `rovo:agent` | The "Permis d'agir" Rovo agent, to query the policy and the ledger from Rovo Chat |
@@ -116,7 +116,7 @@ without a Forge runtime.
 | `src/core/` | Pure TypeScript: action-class catalogue, glob matching, approvals, kill switch, trust capital, plan-first evaluation, hook mapping, permits and ledger model | No | Present |
 | `src/storage/` | Repository adapters over `@forge/sql` (`schema.ts` defines the nine tables), plus an in-memory adapter (`memory.ts`) used by the tests | Yes (`@forge/sql`) | Schema and in-memory adapter present |
 | `src/ui/` | Forge resolvers: issue panel, project settings page, project page, global page, personal settings page, simulation console | Yes (`@forge/resolver`) | In progress |
-| `src/mcp/` | Tool definitions, runtime wiring and the handlers of the nine MCP tools (6 reads, 3 writes) | Yes | Present |
+| `src/mcp/` | Tool definitions, runtime wiring and the handlers of the twelve MCP tools (7 reads, 4 writes, 1 token) | Yes | Present |
 | `src/hooks/` | The `webtrigger` gate handler: reads the personal token, maps the hook event, answers *allow* / *ask* / *deny* | Yes | Present |
 | `src/triggers.ts` | Issue-update trigger and nightly maintenance (permit expiry, trust erosion, chain verification) | Yes | Present |
 | `src/index.ts` | Entry point: every handler referenced by `manifest.yml`, re-exported thin | Yes | Present |
@@ -238,7 +238,7 @@ Rules that surround it:
 
 | Area | Constraint | Consequence for the design |
 |---|---|---|
-| `rovo:mcp` | In Preview, one module per app, 50 tools at most; external access at `https://mcp.atlassian.com/forge/<appId>` in OAuth 2.1, after an administrator activates the installation | One MCP module with the eight tools; admin activation is part of the setup |
+| `rovo:mcp` | In Preview, one module per app, 50 tools at most; external access at `https://mcp.atlassian.com/forge/<appId>` in OAuth 2.1, after an administrator activates the installation | One MCP module with the twelve tools; admin activation is part of the setup |
 | External MCP call | A tool runs with the rights of the user who authorised the client | Identity is read from the call context, never from the inputs |
 | Forge action | Inputs limited to strings, integers, numbers and booleans; 55 s; inputs may be invented by the model | The identity is read from the context; the action only carries data |
 | Automation-triggered agents | They may only call `GET` actions | Mutations are exposed as creations (`request-approval`, `declare-action`, `submit-plan`) |
