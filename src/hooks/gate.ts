@@ -19,6 +19,7 @@
  */
 import { createHash } from 'crypto';
 import { buildGateResponseBody, mapHookEventToAction } from '../core/gate';
+import { targetCovers } from '../core/glob';
 import { verifyPermit } from '../core/permits';
 import { HookEvent } from '../core/types';
 import { buildCaller, getRuntimeSync } from '../mcp/runtime';
@@ -113,26 +114,51 @@ function toHookEvent(body: any): HookEvent {
   };
 }
 
-/** Verification mode: is this permit still valid? */
+/** Paths a CI step asks about: an array, or a newline/comma separated string. */
+function parsePaths(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  }
+  if (typeof raw !== 'string' || raw.trim().length === 0) return [];
+  return raw
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+/** The submitted paths that fall outside the permit scope. */
+function pathsOutsideScope(scopeTarget: string, paths: string[]): string[] {
+  return paths.filter((path) => !targetCovers(scopeTarget, path));
+}
+
+/** Verification mode: is this permit still valid, and does it cover these paths? */
 async function verifyPermitMode(body: any): Promise<WebTriggerResponse> {
   const runtime = getRuntimeSync();
   const permitId = typeof body?.permitId === 'string' ? body.permitId : '';
   const permits = await runtime.repos.permits.listPermits({});
   const permit = permits.find((item) => item.id === permitId);
-  if (!permit) return respond(200, { permitId, found: false, valid: false });
+  if (!permit) return respond(200, { permitId, found: false, valid: false, covers: false });
   const now = runtime.now();
   const signatureValid = verifyPermit(permit, runtime.secret);
   const expired = now >= permit.expiresAt;
   const active = !expired && permit.usesLeft > 0 && !permit.revokedAt && permit.suspended !== true;
+  // A valid permit is not a blank cheque: a merge gate must also check that the
+  // change it is about to let through is inside the permit scope. Without the
+  // paths the answer stays what it was, so existing callers are unaffected.
+  const uncovered = pathsOutsideScope(permit.scope.target, parsePaths(body?.paths));
   // The scope is deliberately absent from this answer. Verification mode is reachable
   // without a personal token — a CI step holds only the gate URL, which is the credential
   // (web triggers have no platform authentication) — and permit ids are sequential, so this
   // endpoint is an enumeration oracle. It must answer "is this permit still valid?" and
   // say why when it is not, without disclosing which target the permit authorises.
+  // `uncovered` echoes back paths the caller supplied, which is the least that can
+  // explain a refusal; it never reveals the scope on its own.
   return respond(200, {
     permitId,
     found: true,
     valid: signatureValid && active,
+    covers: uncovered.length === 0,
+    uncovered,
     signatureValid,
     expired,
     revoked: Boolean(permit.revokedAt),

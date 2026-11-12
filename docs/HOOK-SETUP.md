@@ -288,33 +288,43 @@ forge side — a CI step asks the gate, and the gate answers.
 ```bash
 curl -sS -X POST "$PERMIS_GATE_URL" \
   -H 'Content-Type: application/json' \
-  -d '{"permitId":"PA-2026-000417"}'
+  -d '{"permitId":"PA-2026-000417","paths":["db/migrations/001.sql","src/index.ts"]}'
 ```
+
+`paths` is optional and accepts an array or a newline/comma separated string.
 
 ```json
 {
   "permitId": "PA-2026-000417",
   "found": true,
   "valid": true,
+  "covers": false,
+  "uncovered": ["src/index.ts"],
   "signatureValid": true,
   "expired": false,
   "revoked": false,
   "suspended": false,
-  "usesLeft": 0
+  "usesLeft": 1
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `found` | The permit id exists in this installation. An unknown id answers `found: false, valid: false` — never a 404, so a CI step can treat both cases the same way. |
-| `valid` | The single field a gate needs: `signatureValid && !expired && usesLeft > 0 && !revoked && !suspended`. |
+| `found` | The permit id exists in this installation. An unknown id answers `found: false, valid: false, covers: false` — never a 404, so a CI step can treat both cases the same way. |
+| `valid` | Is the permit itself usable: `signatureValid && !expired && usesLeft > 0 && !revoked && !suspended`. |
+| `covers` | Are **all** the submitted `paths` inside the permit scope. `true` when no path is submitted, so a caller that only wants validity is unaffected. |
+| `uncovered` | The paths that fall outside the scope — the reason a merge gate refuses, named. |
 | `signatureValid` | The HMAC-SHA256 over the signed fields still matches with the installation secret — the permit was not rewritten. |
 | `expired` / `revoked` / `suspended` / `usesLeft` | Why an invalid permit is invalid. No refusal without a reason. |
 
+**A merge gate must check both.** `valid` alone would let any live permit through any pull
+request: an agent holding a permit for one migration could ship the whole repository under it.
+The gate answers `covers` for exactly that, and the check fails on `!valid || !covers`.
+
 `usesLeft: 0` with `valid: false` is the normal end of a single-use permit that has already been
-spent: the action happened, the proof is closed. A CI check that verifies a permit cited in a pull
-request should therefore run **while the permit still has uses left**, or the team should accept
-that a spent permit is reported as no longer usable.
+spent: the action happened, the proof is closed. Verification does **not** consume a use — a pull
+request is pushed many times before it merges, and the use is spent by the action itself, through
+the hook. A CI check therefore runs while the permit still has uses left.
 
 ### The ready-to-use workflow
 
@@ -337,7 +347,10 @@ gate URL *is* the credential.
 The consequence is honest and worth stating: permit ids are sequential, so anyone holding the gate
 URL has an enumeration oracle. The answer is therefore **minimised** — it says whether a permit is
 valid and why, but never its `scope`. A caller cannot learn *which target* a permit authorises (the
-file, the command, the ticket) by guessing ids. Deciding an action still requires the pilot's
-personal token; only the yes/no verification is open.
+file, the command, the ticket) by guessing ids. `covers` narrows that a little: a caller who
+supplies candidate paths learns whether they fall inside the scope of a permit they already named.
+That is the price of a merge gate that can explain its refusal, and it discloses far less than the
+scope itself — the paths of a pull request are public in the pull request. Deciding an action still
+requires the pilot's personal token; only the yes/no verification is open.
 
 Keep the gate URL in a CI secret, not in the workflow file.
