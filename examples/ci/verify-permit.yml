@@ -3,19 +3,25 @@
 # An app installed on Jira cannot call the Bitbucket API (spec §18), so the
 # merge gate for pull requests lives on the forge side: this workflow extracts
 # the `Permis-Agent: PA-2026-000417` line an agent cites in its pull request
-# description, asks the gate whether that permit is still valid, and fails the
-# check when it is not.
+# description, asks the gate whether that permit is still valid **and whether
+# it covers the files this pull request changes**, and fails the check when it
+# does not.
+#
+# Checking the diff is the point. Without it any valid permit would let any
+# pull request through: the gate answers `covers` and lists the paths that fall
+# outside the permit scope, and the check fails on either.
 #
 # Copy this file to `.github/workflows/` of the repository you want to guard,
-# and set two repository secrets:
+# and set one repository secret:
 #   PERMIS_GATE_URL   the gate web trigger URL (`forge webtrigger create -f gate`)
 #
-# No secret token is needed: permit verification is a read-only check of a
-# signature and an expiry. Deciding an action still requires the pilot's token.
+# No personal token is needed: permit verification is a read-only check of a
+# signature, an expiry and a scope. Deciding an action still requires the
+# pilot's token.
 #
 # Deliberately triggered by the unprivileged `pull_request` event: the check only
-# reads the pull request description and calls the gate, so it needs no write
-# access and must not run with elevated privileges.
+# reads the pull request description and its file list and calls the gate, so it
+# needs no write access and must not run with elevated privileges.
 
 name: Permis d'agir — permit check
 
@@ -51,26 +57,56 @@ jobs:
             echo "Permit cited: $permit"
           fi
 
-      - name: Verify the permit against the gate
+      - name: List the files this pull request changes
+        if: steps.permit.outputs.found != ''
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # `pull-requests: read` is enough for the file list; no third-party action.
+          curl -sS --max-time 30 -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" \
+            | python3 -c 'import json,sys; print("\n".join(f["filename"] for f in json.load(sys.stdin)))' \
+            > changed.txt
+          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
+          cat changed.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Changed files:"; cat changed.txt
+
+      - name: Verify the permit, and its scope, against the gate
         if: steps.permit.outputs.found != ''
         env:
           GATE_URL: ${{ secrets.PERMIS_GATE_URL }}
           PERMIT: ${{ steps.permit.outputs.found }}
+          PATHS: ${{ steps.files.outputs.paths }}
         run: |
           if [ -z "$GATE_URL" ]; then
             echo "::error::PERMIS_GATE_URL secret is not set"
             exit 1
           fi
+          payload="$(printf '%s' "$PATHS" | python3 -c '
+          import json, sys
+          paths = [line.strip() for line in sys.stdin if line.strip()]
+          print(json.dumps({"permitId": sys.argv[1], "paths": paths}))' "$PERMIT")"
           answer="$(curl -sS --max-time 30 -X POST "$GATE_URL" \
-            -H 'Content-Type: application/json' \
-            -d "{\"permitId\":\"$PERMIT\"}")"
+            -H 'Content-Type: application/json' -d "$payload")"
           echo "gate answer: $answer"
-          valid="$(printf '%s' "$answer" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("valid", False))')"
-          if [ "$valid" != "True" ]; then
-            echo "::error::Permit $PERMIT is not valid (expired, revoked, spent, or signature mismatch)"
-            exit 1
-          fi
-          echo "Permit $PERMIT is valid."
+          printf '%s' "$answer" | python3 -c '
+          import json, sys
+          answer = json.load(sys.stdin)
+          valid = answer.get("valid", False)
+          covers = answer.get("covers", False)
+          uncovered = answer.get("uncovered") or []
+          if not valid:
+              print("::error::Permit %s is not valid (expired, revoked, suspended, spent, or signature mismatch)" % answer.get("permitId"))
+              raise SystemExit(1)
+          if not covers:
+              print("::error::Permit %s does not cover: %s" % (answer.get("permitId"), ", ".join(uncovered)))
+              print("::error::Ask for a permit scoped to these paths, or narrow the pull request.")
+              raise SystemExit(1)
+          print("Permit %s is valid and covers every changed file." % answer.get("permitId"))'
 
       - name: Report when no permit was needed
         if: steps.permit.outputs.found == ''
