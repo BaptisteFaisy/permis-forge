@@ -23,7 +23,8 @@ export type LedgerKind =
   | 'deviation'
   | 'policy-changed'
   | 'correction'
-  | 'anchor';
+  | 'anchor'
+  | 'sla';
 
 /**
  * Detail payload of an `anchor` entry: the daily Merkle root of the day's
