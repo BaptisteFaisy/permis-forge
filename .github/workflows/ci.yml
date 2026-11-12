@@ -68,13 +68,21 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Tests unitaires (jest)
-        run: npx jest --ci --silent
+        run: |
+          mkdir -p reports
+          npx jest --ci --silent --json --outputFile=reports/jest.json
 
       # Le manifeste et le code doivent rester d'accord : chaque handler
       # existe, chaque action pointe vers une fonction, les outils MCP et
       # le miroir runtime ne divergent pas.
       - name: Garde du manifeste
         run: node scripts/check-manifest.mjs
+
+      # Chaque chiffre écrit dans la documentation est confronté à la réalité
+      # du dépôt : une doc qui ment (tables, tests, outils, version déployée)
+      # fait échouer la PR au lieu d'attendre d'être lue.
+      - name: Affirmations des docs
+        run: node scripts/verify-claims.mjs --jest-json reports/jest.json
 
       - name: Sanity docs (UTF-8, non vides)
         run: |
