@@ -22,15 +22,30 @@ For each project and each UTC day:
 
 ## Where it is published
 
-A Confluence page in the space set by the `PERMIS_ANCHOR_SPACE` app variable
-(`POST /rest/api/content`, storage format), titled
-`Permis d'agir — anchor <PROJECT> <YYYY-MM-DD>`. The page contains the root,
-the entry count, and the full table of the day's entries (seq, timestamp,
-kind, hash…) via the same Confluence export the audit screen uses.
+Two transports, both **outside** the app's Forge SQL database, where the app
+cannot rewrite what it has already written:
+
+| Transport | Configured by | Needs | Carries |
+|---|---|---|---|
+| **Jira comment** (default) | `PERMIS_ANCHOR_ISSUE` = the audit ticket key | nothing beyond `write:jira-work`, already granted | the root, the day, the entry count |
+| Confluence page | `PERMIS_ANCHOR_SPACE` = the space key | the `write:confluence-content` scope, which `manifest.yml` does **not** request by default | the root and the full table of the day's entries |
+
+The Jira comment is the default because it needs no permission the app does not
+already hold — it reuses the comment poster of the approver notifications —
+and because a comment lives in Jira's own storage, where the app has no edit
+or delete path. The Confluence transport is richer (it carries the whole table
+of entries) but opt-in: without the scope it is refused and the failure is
+logged, and the root stays in the chain either way.
 
 Publication is **best effort**: if it fails, the `anchor` entry is still
 written to the chain and the failure is logged — it never propagates (same
 contract as approver notifications).
+
+Set the variable on the installation:
+
+```bash
+forge variables set PERMIS_ANCHOR_ISSUE PAY-1 --environment development
+```
 
 ## How to verify a root by hand
 

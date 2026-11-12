@@ -9,7 +9,9 @@ import {
   anchorLeaves,
   buildAnchorPublication,
   dayOf,
+  jiraCommentPublisher,
 } from '../src/services/anchor';
+import { AdfNode } from '../src/services/adf';
 import { GENESIS_HASH, makeEntry, verifyChain } from '../src/core/ledger';
 import { merkleRoot } from '../src/core/merkle';
 import { createMemoryRepositories } from '../src/storage/memory';
@@ -57,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   errorSpy.mockRestore();
   delete process.env.PERMIS_ANCHOR_SPACE;
+  delete process.env.PERMIS_ANCHOR_ISSUE;
 });
 
 describe('dayOf', () => {
@@ -192,5 +195,49 @@ describe('buildAnchorPublication', () => {
     expect(publication.storage).toContain('<table>');
     expect(publication.storage).toContain('abc123');
     expect(publication.storage).toContain(DAY);
+  });
+});
+
+describe('jiraCommentPublisher', () => {
+  /** Poster that records the ADF body it was asked to send. */
+  function recordingPoster(): { posted: AdfNode[]; keys: string[]; poster: (k: string, b: AdfNode) => Promise<void> } {
+    const posted: AdfNode[] = [];
+    const keys: string[] = [];
+    return { posted, keys, poster: async (k, b) => { keys.push(k); posted.push(b); } };
+  }
+
+  it('posts one comment on the configured audit ticket', async () => {
+    const { keys, poster } = recordingPoster();
+    const publisher = jiraCommentPublisher('PAY-1', poster);
+
+    await publisher!(buildAnchorPublication(PROJECT, DAY, 'a'.repeat(64), []));
+
+    expect(keys).toEqual(['PAY-1']);
+  });
+
+  it('carries the day, the project and the root, so a reader can verify by hand', async () => {
+    const root = 'f'.repeat(64);
+    const { posted, poster } = recordingPoster();
+    const publisher = jiraCommentPublisher('PAY-1', poster);
+
+    await publisher!(buildAnchorPublication(PROJECT, DAY, root, []));
+
+    const flat = JSON.stringify(posted[0]);
+    expect(flat).toContain(root);
+    expect(flat).toContain(DAY);
+    expect(flat).toContain(PROJECT);
+  });
+
+  it('builds valid ADF: every bulletList child is a listItem', async () => {
+    const { posted, poster } = recordingPoster();
+    const publisher = jiraCommentPublisher('PAY-1', poster);
+
+    await publisher!(buildAnchorPublication(PROJECT, DAY, 'a'.repeat(64), []));
+
+    const lists = (posted[0].content ?? []).filter((node) => node.type === 'bulletList');
+    expect(lists.length).toBeGreaterThan(0);
+    for (const list of lists) {
+      for (const child of list.content ?? []) expect(child.type).toBe('listItem');
+    }
   });
 });
