@@ -2,7 +2,7 @@
  * Unit tests for the reactive Forge SQL schema bootstrap.
  *
  * The regression these guard against is real and was observed on the deployed
- * installation: replaying the fifteen DDL statements on every cold start made
+ * installation: replaying the whole DDL (23 statements) on every cold start made
  * Forge SQL answer `429 RATE_LIMIT_EXCEEDED`, and every gated action failed
  * closed. The schema must therefore be created only when a query reports a
  * missing table, and never on the happy path.

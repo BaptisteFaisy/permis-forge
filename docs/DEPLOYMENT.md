@@ -152,7 +152,7 @@ curl -sS -X POST "$GATE_URL" \
 Expect a `deny` with a request id: the door is closed by default, and a
 destructive git operation is class A-12 (forbidden).
 
-## 6b. This installation, as deployed on 11 November 2026
+## 6b. This installation, as deployed on 12 November 2026
 
 The app is live; these are the real values, so anyone picking the project up can resume without
 guessing. The secrets themselves stay out of the repository.
@@ -162,7 +162,7 @@ guessing. The secrets themselves stay out of the repository.
 | App id | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
 | Developer Space | `laddition` (`abf72fff-edaf-4259-900c-743702f0d1f2`) |
 | Site | `one-atlas-cndz.atlassian.net` (Jira) |
-| Environment | `development`, version 2.2.0 |
+| Environment | `development` — Forge **major version 2**, last deployed 12 November 2026 00:36 UTC |
 | Installation id | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
 | Gate URL | `https://<installation>.webtrigger.atlassian.app/public/<gate-key>` — stored locally in `~/.atlassian/permis-gate-url.txt`, mode 600 |
 | Operator URL | same host, separate key — `~/.atlassian/permis-admin-url.txt` |
@@ -175,6 +175,24 @@ Commands actually used:
 export FORGE_EMAIL=…                      # Atlassian account email
 export FORGE_API_TOKEN="$(tr -d '\r\n' < ~/.atlassian-api-token)"
 export PATH=~/tools/node-v26.12.1-linux-x64/bin:$PATH   # Node >= 26.12.1 for the CLI
+```
+
+> The Node version matters: the CLI refuses `^22.23.4 || ^24.22.1 || >=26.12.1` outside that
+> range, and the `node` first in `PATH` on this host is **26.9.0** — the CLI answers
+> *"Unsupported Node.js version"* and exits. Two recipes work:
+>
+> ```bash
+> export PATH=~/tools/node-v26.12.1-linux-x64/bin:$PATH
+> forge version list
+>
+> # or, without touching PATH:
+> ~/tools/node-v26.12.1-linux-x64/bin/node \
+>   ~/.local/opt/lib/node_modules/@forge/cli/out/bin/cli.js version list
+> ```
+>
+> `forge version list`, `forge install list` and `forge environments list` are the three commands
+> that answer the questions this document asks — the app id, the installation id, and which
+> environment is actually installed. (`forge app:info` does not exist in CLI 15.1.0.)
 
 forge developer-spaces list
 forge create permis-agir-mint -t blank -d app -y -s <developer-space-id>   # mints the real app id
@@ -225,7 +243,7 @@ Two defects only a real deployment could reveal, both fixed:
    Without that fix a deployed app would have run on the in-memory adapter and lost every
    decision between invocations.
 
-Also worth knowing: the first call to a fresh container used to create the ten tables and seed
+Also worth knowing: the first call to a fresh container used to create the nine tables and seed
 the organisation floor rules, which cost **15.4 s** once — and then broke the app (next item).
 
 3. **Forge SQL rate-limits DDL, and containers are short-lived.** The first implementation replayed

@@ -8,6 +8,7 @@
  */
 import { handleGate, WebTriggerRequest } from '../src/hooks/gate';
 import { issuePermit, newPermitId } from '../src/core/permits';
+import type { Permit } from '../src/core/types';
 import { resolveSigningSecret } from '../src/mcp/runtime';
 import { getDefaultRepositories, resetDefaultRepositories } from '../src/storage';
 import { createHookToken } from '../src/services/approvals-service';
@@ -59,6 +60,27 @@ describe('handleGate', () => {
     expect(payload.error).toBe('UNKNOWN_TOKEN');
   });
 
+  /** Issue a signed permit and persist it, for the CI verification mode below. */
+  async function savedPermit(sequence: number, mutate?: (permit: Permit) => void): Promise<Permit> {
+    const repos = getDefaultRepositories();
+    const permit = issuePermit(
+      {
+        id: newPermitId(sequence, 2026),
+        scope: { actionClass: 'A-08', target: 'db/migrations/001.sql', issueKey: 'PAY-1', projectId: 'PAY' },
+        holderProfileId: 'default',
+        pilotAccountId: 'pilot-123',
+        issuedAt: new Date().toISOString(),
+        ttlMinutes: 60,
+        uses: 1,
+      },
+      resolveSigningSecret(),
+    );
+    // `mutate` only touches fields outside the signature (usesLeft, suspended, revokedAt).
+    if (mutate) mutate(permit);
+    await repos.permits.savePermit(permit);
+    return permit;
+  }
+
   it('allows safe reads without creating an approval request', async () => {
     const { statusCode, payload } = await call(
       { toolName: 'Read', args: { file_path: 'src/index.ts' } },
@@ -107,26 +129,37 @@ describe('handleGate', () => {
   });
 
   it('verifies a signed permit from a CI step (enforcement point 3)', async () => {
-    const repos = getDefaultRepositories();
-    const permit = issuePermit(
-      {
-        id: newPermitId(417, 2026),
-        scope: { actionClass: 'A-08', target: 'db/migrations/001.sql', issueKey: 'PAY-1', projectId: 'PAY' },
-        holderProfileId: 'default',
-        pilotAccountId: 'pilot-123',
-        issuedAt: new Date().toISOString(),
-        ttlMinutes: 60,
-        uses: 1,
-      },
-      resolveSigningSecret(),
-    );
-    await repos.permits.savePermit(permit);
+    const permit = await savedPermit(417);
 
     const { statusCode, payload } = await call({ permitId: permit.id });
     expect(statusCode).toBe(200);
     expect(payload.found).toBe(true);
     expect(payload.valid).toBe(true);
     expect(payload.usesLeft).toBe(1);
+  });
+
+  it('does not disclose a permit scope to an unauthenticated caller', async () => {
+    const permit = await savedPermit(418);
+
+    // Verification mode needs no token, so a caller holding only the gate URL can
+    // enumerate sequential permit ids: the answer says whether the permit is valid and
+    // why, never which target it authorises.
+    const { payload } = await call({ permitId: permit.id });
+    expect(payload.valid).toBe(true);
+    expect('scope' in payload).toBe(false);
+    expect(JSON.stringify(payload)).not.toContain('db/migrations');
+  });
+
+  it('reports a suspended permit as invalid, and says so', async () => {
+    const permit = await savedPermit(419, (item) => {
+      item.suspended = true;
+    });
+
+    const { payload } = await call({ permitId: permit.id });
+    expect(payload.valid).toBe(false);
+    expect(payload.suspended).toBe(true);
+    expect(payload.expired).toBe(false);
+    expect(payload.signatureValid).toBe(true);
   });
 
   it('reports an unknown permit as invalid rather than as an error', async () => {

@@ -124,6 +124,11 @@ async function verifyPermitMode(body: any): Promise<WebTriggerResponse> {
   const signatureValid = verifyPermit(permit, runtime.secret);
   const expired = now >= permit.expiresAt;
   const active = !expired && permit.usesLeft > 0 && !permit.revokedAt && permit.suspended !== true;
+  // The scope is deliberately absent from this answer. Verification mode is reachable
+  // without a personal token — a CI step holds only the gate URL, which is the credential
+  // (web triggers have no platform authentication) — and permit ids are sequential, so this
+  // endpoint is an enumeration oracle. It must answer "is this permit still valid?" and
+  // say why when it is not, without disclosing which target the permit authorises.
   return respond(200, {
     permitId,
     found: true,
@@ -131,8 +136,8 @@ async function verifyPermitMode(body: any): Promise<WebTriggerResponse> {
     signatureValid,
     expired,
     revoked: Boolean(permit.revokedAt),
+    suspended: permit.suspended === true,
     usesLeft: permit.usesLeft,
-    scope: permit.scope,
   });
 }
 

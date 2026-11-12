@@ -114,7 +114,7 @@ without a Forge runtime.
 | Path | Responsibility | Platform? | State (11 Nov 2026) |
 |---|---|---|---|
 | `src/core/` | Pure TypeScript: action-class catalogue, glob matching, approvals, kill switch, trust capital, plan-first evaluation, hook mapping, permits and ledger model | No | Present |
-| `src/storage/` | Repository adapters over `@forge/sql` (`schema.ts` defines the ten tables), plus an in-memory adapter (`memory.ts`) used by the tests | Yes (`@forge/sql`) | Schema and in-memory adapter present |
+| `src/storage/` | Repository adapters over `@forge/sql` (`schema.ts` defines the nine tables), plus an in-memory adapter (`memory.ts`) used by the tests | Yes (`@forge/sql`) | Schema and in-memory adapter present |
 | `src/ui/` | Forge resolvers: issue panel, project settings page, project page, global page, personal settings page, simulation console | Yes (`@forge/resolver`) | In progress |
 | `src/mcp/` | Tool definitions, runtime wiring and the handlers of the nine MCP tools (6 reads, 3 writes) | Yes | Present |
 | `src/hooks/` | The `webtrigger` gate handler: reads the personal token, maps the hook event, answers *allow* / *ask* / *deny* | Yes | Present |
