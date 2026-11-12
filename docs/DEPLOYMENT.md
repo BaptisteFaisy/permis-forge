@@ -113,9 +113,32 @@ installed one keeps its own id, its own web trigger URL and its own data.
 
 ```bash
 node scripts/demo.mjs          # the 11 acceptance scenarios, offline
-npx jest                       # 18 suites, unit tests, no network
+npx jest                       # 30 suites, unit tests, no network
 node scripts/check-manifest.mjs
 ```
+
+Once the app is deployed, replay the acceptance checks **against the real
+installation** — web triggers, Forge SQL, project policy and all:
+
+```bash
+bash scripts/regression-live.sh
+# 18 checks: storage and chain integrity, operator authentication, personal
+# token, gate decisions (migration refused, read allowed, A-10 and A-15 at N0,
+# CI file reclassified A-07, observe mode, per-project policy, no token = 401),
+# and the six Jira screens through their resolvers.
+```
+
+It reads three local files and prints no secret:
+
+| File | Content |
+|---|---|
+| `~/.atlassian/permis-gate-url.txt` | gate web trigger URL |
+| `~/.atlassian/permis-admin-url.txt` | operator web trigger URL |
+| `~/.atlassian/permis-signing-secret` | installation secret (`X-Permis-Admin`) |
+
+Override the target project with `PROJECT=… ISSUE=… bash scripts/regression-live.sh`.
+The observe-mode and project-rule checks need a seeded policy: load
+`examples/policy/seed-payments.json` first with the `seed-policy` operator action.
 
 Then, against the deployed app, the hook gate answers a plain POST:
 
