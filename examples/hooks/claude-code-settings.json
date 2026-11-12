@@ -10,10 +10,12 @@
             "timeout": 10,
             "onFailure": "block",
             "headers": {
-              "Authorization": "Bearer $PERMIS_AGENT_TOKEN"
+              "Authorization": "Bearer $PERMIS_AGENT_TOKEN",
+              "X-Permis-Issue": "$PERMIS_AGENT_ISSUE"
             },
             "allowedEnvVars": [
-              "PERMIS_AGENT_TOKEN"
+              "PERMIS_AGENT_TOKEN",
+              "PERMIS_AGENT_ISSUE"
             ]
           }
         ]
@@ -29,10 +31,12 @@
             "timeout": 10,
             "onFailure": "block",
             "headers": {
-              "Authorization": "Bearer $PERMIS_AGENT_TOKEN"
+              "Authorization": "Bearer $PERMIS_AGENT_TOKEN",
+              "X-Permis-Issue": "$PERMIS_AGENT_ISSUE"
             },
             "allowedEnvVars": [
-              "PERMIS_AGENT_TOKEN"
+              "PERMIS_AGENT_TOKEN",
+              "PERMIS_AGENT_ISSUE"
             ]
           }
         ]

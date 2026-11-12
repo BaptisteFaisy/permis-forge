@@ -184,7 +184,10 @@ describe('gate — hook file generation', () => {
     expect(hook.timeout).toBe(10);
     expect(hook.onFailure).toBe('block');
     expect(hook.headers.Authorization).toBe('Bearer $PERMIS_AGENT_TOKEN');
-    expect(hook.allowedEnvVars).toEqual(['PERMIS_AGENT_TOKEN']);
+    // The ticket is named by the hook, through the environment: without it the
+    // gate has no ticket and refuses anything beyond N4.
+    expect(hook.headers['X-Permis-Issue']).toBe('$PERMIS_AGENT_ISSUE');
+    expect(hook.allowedEnvVars).toEqual(['PERMIS_AGENT_TOKEN', 'PERMIS_AGENT_ISSUE']);
   });
 
   it('honours custom token var, timeout and matchers', () => {
@@ -200,7 +203,7 @@ describe('gate — hook file generation', () => {
     const hook = file.hooks.PreToolUse[0].hooks[0];
     expect(hook.timeout).toBe(3);
     expect(hook.headers.Authorization).toBe('Bearer $MY_TOKEN');
-    expect(hook.allowedEnvVars).toEqual(['MY_TOKEN']);
+    expect(hook.allowedEnvVars).toEqual(['MY_TOKEN', 'PERMIS_AGENT_ISSUE']);
   });
 });
 

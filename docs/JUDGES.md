@@ -17,7 +17,7 @@ against it.
 | What | Where |
 |---|---|
 | Sample project | `PAY`, with ticket `PAY-42` |
-| Replay the live checks | `bash scripts/regression-live.sh` — 30 checks against the deployed installation, through the real web triggers and Forge SQL |
+| Replay the live checks | `bash scripts/regression-live.sh` — 32 checks against the deployed installation, through the real web triggers and Forge SQL |
 | Replay the scenarios offline | `node scripts/demo.mjs` — 11/11, no network needed |
 | Read the evidence | [`VALIDATIONS.md`](VALIDATIONS.md) — what was measured, on which date, and with which limits |
 

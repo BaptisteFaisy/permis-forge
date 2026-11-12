@@ -130,10 +130,16 @@ function toHookEvent(body: any): HookEvent {
 
 /** The ticket an action serves: the bridge sends it in a header, or the caller in the body. */
 function issueKeyOf(header: HeaderLookup, body: any): string | undefined {
-  return (
+  const raw =
     header('x-permis-issue') ??
-    (typeof body?.issueKey === 'string' && body.issueKey.length > 0 ? body.issueKey : undefined)
-  );
+    (typeof body?.issueKey === 'string' && body.issueKey.length > 0 ? body.issueKey : undefined);
+  // A hook that names its ticket through an environment variable can send the
+  // placeholder itself when the variable is not set. An unset variable is not a
+  // ticket: the gate refuses rather than act on a literal "$PERMIS_AGENT_ISSUE".
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0 || trimmed.startsWith('$')) return undefined;
+  return trimmed;
 }
 
 /** Is this payload a declaration of an action that already ran? */
