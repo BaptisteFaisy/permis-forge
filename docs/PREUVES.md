@@ -253,6 +253,21 @@ sends `X-Permis-Issue` from `PERMIS_AGENT_ISSUE`, like the command bridge
 already did, and the gate refuses an unexpanded `$PERMIS_AGENT_ISSUE` instead
 of treating it as a ticket.
 
+**And a real client ran — `opencode` v2.1.1, a real model — and found two things.**
+
+- The shipped `examples/hooks/gate-bridge.sh` **failed open**: it printed the
+  denial on stdout but exited **0**, so a client that reads only the exit code
+  ran the action anyway. Fixed (exit 2 on a refusal), pinned by
+  `test/gate-bridge.test.ts`.
+- opencode has no tool hook (`tool.execute.before` is gone in v2; its plugin
+  API is effect-based and has no pre-tool interception), so the gate had to sit
+  in a wrapper script. The agent read the wrapper as prompt injection, refused
+  to run it, and edited the file directly — a truthful demonstration that a
+  *wrapper* is cooperative, and the mechanical guarantee only exists in the
+  client's own hook. (opencode's default model config was also broken:
+  `combo/claude-opus-5-5` no longer exists at the provider; `ag/claude-sonnet-4-6`
+  works.)
+
 **Still open on the code side.** The delegation path (`delegate-permit`) does
 not check that the caller owns the permit it delegates: it looks the parent up
 by id among *all* permits. An agent could therefore delegate a permit issued to
