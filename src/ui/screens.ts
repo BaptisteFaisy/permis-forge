@@ -3,6 +3,7 @@
  */
 import { levelName } from '../core/catalog';
 import { AgentCallContext, Decision } from '../core/types';
+import { lintPolicy, summarizeFindings } from '../services/policy-lint';
 import { summarize30DayObservation } from './audit';
 import {
   DEFAULT_PAGE_SIZE,
@@ -82,6 +83,7 @@ export async function projectSettings(deps: ResolverDeps, payload: any, context:
     deps.repos.zones.listZones(projectId),
     deps.repos.killSwitches.get('project', projectId),
   ]);
+  const findings = lintPolicy({ projectId, rules, zones });
   return {
     lang,
     title: t(lang, 'screen.projectSettings.title'),
@@ -101,6 +103,13 @@ export async function projectSettings(deps: ResolverDeps, payload: any, context:
       maxLevelWithoutTicket: 4,
     },
     catalog: catalogSummary(lang),
+    // The lint findings ride along with the policy grid: an administrator who
+    // opens the settings screen sees the contradictions in the same call, with
+    // no extra round trip. Messages are English, built by the pure linter.
+    lint: {
+      summary: summarizeFindings(findings),
+      findings,
+    },
   };
 }
 

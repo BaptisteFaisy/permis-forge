@@ -403,3 +403,32 @@ describe('callResolver', () => {
     await expect(callResolver(stub, 'projectPage')).rejects.toThrow(/no definition/i);
   });
 });
+
+describe('projectSettings carries the policy lint', () => {
+  it('reports a rule softer than the organisation floor in the same payload as the grid', async () => {
+    const { deps, repos } = makeDeps();
+    await repos.policies.upsertRule({ id: 'org-1', scope: 'org', actionClass: 'A-05', level: 2, mode: 'enforce' });
+    await repos.policies.upsertRule({
+      id: 'p-1', scope: 'project', projectId: PROJECT, actionClass: 'A-05', level: 4, mode: 'enforce',
+    });
+
+    const out = await callResolver(createResolvers(deps), 'projectSettings', { payload: { projectId: PROJECT } });
+
+    expect(out.lint.summary.error).toBe(1);
+    expect(out.lint.findings[0].code).toBe('SOFTER_THAN_FLOOR');
+    expect(out.lint.findings[0].ruleId).toBe('p-1');
+  });
+
+  it('finds nothing to complain about on a policy that only hardens the floor', async () => {
+    const { deps, repos } = makeDeps();
+    await repos.policies.upsertRule({ id: 'org-1', scope: 'org', actionClass: 'A-05', level: 3, mode: 'enforce' });
+    await repos.policies.upsertRule({
+      id: 'p-1', scope: 'project', projectId: PROJECT, actionClass: 'A-05', level: 1, mode: 'enforce',
+    });
+
+    const out = await callResolver(createResolvers(deps), 'projectSettings', { payload: { projectId: PROJECT } });
+
+    expect(out.lint.summary.error).toBe(0);
+    expect(out.lint.findings.filter((item: any) => item.ruleId === 'p-1')).toEqual([]);
+  });
+});
