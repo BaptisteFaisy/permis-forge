@@ -16,7 +16,11 @@
       "auth": {
         "type": "oauth2",
         "grantType": "authorization_code",
-        "scopes": ["read:jira-work", "write:jira-work", "read:jira-user"]
+        "scopes": [
+          "read:jira-work",
+          "write:jira-work",
+          "read:jira-user"
+        ]
       }
     }
   },
@@ -28,7 +32,11 @@
     "list-permits",
     "declare-action",
     "submit-plan",
-    "get-agent-standing"
+    "create-hook-token",
+    "get-agent-standing",
+    "detect-drift",
+    "delegate-permit",
+    "suggest-policy"
   ],
   "agentInstructions": [
     "Call check-permission before any action beyond reading, with the issue key,",

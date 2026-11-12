@@ -53,12 +53,15 @@ describe('example files', () => {
     expect(fs.existsSync(path.join(EXAMPLES, 'hooks', 'gate-bridge.sh'))).toBe(true);
   });
 
-  it('ships an MCP client config listing the eight tools', () => {
+  it('ships an MCP client config listing every exposed tool', () => {
     const config = readJson('mcp/client-config.json');
     expect(config.mcpServers['permis-agir'].url).toContain('https://mcp.atlassian.com/forge/');
     expect(config.mcpServers['permis-agir'].auth.type).toBe('oauth2');
-    expect(config.expectedTools).toHaveLength(8);
+    expect(config.expectedTools).toHaveLength(12);
     expect(config.expectedTools).toContain('check-permission');
+    expect(config.expectedTools).toContain('detect-drift');
+    expect(config.expectedTools).toContain('delegate-permit');
+    expect(config.expectedTools).toContain('suggest-policy');
   });
 
   it('ships a seed policy whose fields load into the real storage', async () => {
@@ -97,5 +100,18 @@ describe('example files', () => {
       if (floor === undefined) continue;
       expect(rule.level).toBeLessThanOrEqual(floor);
     }
+  });
+});
+
+describe('the shipped hook file declares the action after it ran', () => {
+  it('carries a PostToolUse hook on the same gate, failing closed', () => {
+    const hooks = readJson('hooks/claude-code-settings.json');
+    const generated = buildHookFile({ gateUrl: 'https://x.webtrigger.atlassian.app/gate' });
+
+    expect(hooks.hooks.PostToolUse).toHaveLength(1);
+    expect(hooks.hooks.PostToolUse[0].matcher).toBe(generated.hooks.PostToolUse![0].matcher);
+    expect(hooks.hooks.PostToolUse[0].hooks[0].type).toBe('http');
+    expect(hooks.hooks.PostToolUse[0].hooks[0].onFailure).toBe('block');
+    expect(hooks.hooks.PostToolUse[0].hooks[0].headers.Authorization).toBe('Bearer $PERMIS_AGENT_TOKEN');
   });
 });
