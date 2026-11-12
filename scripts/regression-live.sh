@@ -37,6 +37,9 @@ check() {
   if [ "$2" = "1" ]; then printf '  [OK]    %s\n' "$1"; ok=$((ok+1));
   else printf '  [ÉCHEC] %s\n' "$1"; ko=$((ko+1)); fi
 }
+# Un contrôle qu'on ne peut pas faire n'est pas un échec : il est signalé, et
+# le harnais reste vert sur ce qui a réellement été vérifié.
+skip() { printf '  [PASSÉ] %s\n' "$1"; }
 field() { python3 -c "import json,sys;d=json.load(sys.stdin);
 import functools
 cur=d
@@ -49,6 +52,14 @@ gate()  { curl -sS -m 90 -X POST "$GATE" -H 'Content-Type: application/json' \
             -H "Authorization: Bearer $2" -H "X-Permis-Issue: ${3:-$ISSUE}" -d "$1"; }
 decision() { python3 -c 'import json,sys;print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecision"])'; }
 reason()   { python3 -c 'import json,sys;print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])'; }
+
+# Le pilote doit être un vrai compte, pas un compte de régie : le harnais lit
+# l'accountId réel (mode 600) et ne retombe sur le compte de régie qu'en local.
+PILOT_ACCOUNT="$(tr -d '\r\n' < "$HOME/.atlassian/permis-pilot-account.txt" 2>/dev/null || true)"
+[ -n "$PILOT_ACCOUNT" ] || PILOT_ACCOUNT="${PERMIS_PILOT_ACCOUNT:-557058:regression}"
+JIRA_BASE="${PERMIS_JIRA_BASE:-https://one-atlas-cndz.atlassian.net}"
+JIRA_EMAIL="${PERMIS_JIRA_EMAIL:-$(sed -n '1p' "$HOME/.atlassian-login" 2>/dev/null | tr -d '\r' | sed 's/^email=//')}"
+JIRA_TOKEN="${PERMIS_JIRA_TOKEN:-$(tr -d '\r\n' < "$HOME/.atlassian-api-token" 2>/dev/null || true)}"
 
 echo "Régression live — projet $PROJECT, ticket $ISSUE"
 
@@ -63,9 +74,9 @@ CODE=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST "$ADMIN" -H 'Conten
 [ "$CODE" = "401" ] && check "secret opérateur invalide refusé (401)" 1 || check "secret opérateur invalide refusé ($CODE)" 0
 
 echo "2. Jeton personnel et décisions du gate"
-TOK=$(admin '{"action":"mint-token","accountId":"557058:regression","label":"regression-live"}' \
+TOK=$(admin "{\"action\":\"mint-token\",\"accountId\":\"$PILOT_ACCOUNT\",\"label\":\"regression-live\"}" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))')
-[ -n "$TOK" ] && check "jeton personnel émis (hash seul stocké)" 1 || check "jeton personnel émis" 0
+[ -n "$TOK" ] && check "jeton personnel émis pour le compte réel ($PILOT_ACCOUNT)" 1 || check "jeton personnel émis" 0
 
 R=$(gate '{"toolName":"Edit","args":{"file_path":"db/migrations/900_reg.sql"}}' "$TOK" | decision)
 [ "$R" = "deny" ] && check "migration refusée sans permis (A-08)" 1 || check "migration refusée sans permis ($R)" 0
@@ -137,26 +148,76 @@ E=$(admin '{"action":"apply-suggestion","projectId":"'"$PROJECT"'","suggestionId
   || check "suggestion inconnue ($(printf '%s' "$E" | head -c 100))" 0
 
 echo "5. Vérification CI (point d'application n°3)"
-# A permit of the project, obtained the way a pilot obtains one: the gate
-# creates the request, the operator approves it.
-REQ=$(gate '{"toolName":"Edit","args":{"file_path":"db/migrations/902_verify.sql"}}' "$TOK" | reason | grep -oE 'RQ-[0-9]{4}-[0-9]{6}' | head -1)
+# Une cible par exécution : le permis émis au run précédent couvrirait encore
+# le chemin fixe, la porte s'ouvrirait et aucune demande ne serait créée. C'est
+# le même piège que la dérive, qui est idempotente par construction.
+VERIFY_FILE="db/migrations/902_verify_$(date +%s).sql"
+REQ=$(gate "{\"toolName\":\"Edit\",\"args\":{\"file_path\":\"$VERIFY_FILE\"}}" "$TOK" | reason | grep -oE 'RQ-[0-9]{4}-[0-9]{6}' | head -1)
 PERMIT=$(admin "{\"action\":\"approve-request\",\"requestId\":\"$REQ\",\"by\":\"regression\"}" \
   | python3 -c 'import json,sys;print(json.load(sys.stdin).get("permit",""))')
 [ -n "$PERMIT" ] && check "permis émis pour la vérification ($PERMIT)" 1 || check "permis émis pour la vérification" 0
 V=$(curl -sS -m 60 -X POST "$GATE" -H 'Content-Type: application/json' \
-  -d "{\"permitId\":\"$PERMIT\",\"projectId\":\"$PROJECT\",\"paths\":[\"db/migrations/902_verify.sql\"]}")
+  -d "{\"permitId\":\"$PERMIT\",\"projectId\":\"$PROJECT\",\"paths\":[\"$VERIFY_FILE\"]}")
 [ "$(printf '%s' "$V" | field found)" = "True" ] && check "vérification du permis du projet : trouvé et valide" 1 \
   || check "vérification du permis du projet ($V)" 0
 # The verification path is unauthenticated by design: a CI runner holds the
 # gate URL, not a pilot's token. The project is what bounds the answer — a
 # check on another project must learn nothing about this permit.
 V=$(curl -sS -m 60 -X POST "$GATE" -H 'Content-Type: application/json' \
-  -d "{\"permitId\":\"$PERMIT\",\"projectId\":\"AUTRE\",\"paths\":[\"db/migrations/902_verify.sql\"]}")
+  -d "{\"permitId\":\"$PERMIT\",\"projectId\":\"AUTRE\",\"paths\":[\"$VERIFY_FILE\"]}")
 [ "$(printf '%s' "$V" | field found)" = "False" ] && check "vérification depuis un autre projet : invisible" 1 \
   || check "vérification depuis un autre projet ($V)" 0
 CODE=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST "$GATE" -H 'Content-Type: application/json' \
   -d "{\"permitId\":\"$PERMIT\"}")
 [ "$CODE" = "400" ] && check "vérification sans projet : refus 400" 1 || check "vérification sans projet ($CODE)" 0
+
+echo "6. Notification approbateur (vrai ticket)"
+# Un refus qui crée une demande doit poster sa carte d'approbation sur le vrai
+# ticket Jira — sinon la demande n'arriverait jamais à personne. On le vérifie
+# en relisant les commentaires du ticket via l'API REST de Jira.
+R=$(gate '{"toolName":"Edit","args":{"file_path":"db/migrations/903_notify.sql"}}' "$TOK" | reason)
+RQ2=$(printf '%s' "$R" | grep -oE 'RQ-[0-9]{4}-[0-9]{6}' | head -1)
+if [ -z "$RQ2" ]; then
+  check "demande créée pour la notification ($R)" 0
+elif [ -z "$JIRA_EMAIL" ] || [ -z "$JIRA_TOKEN" ]; then
+  # Sans les crédentials Jira REST (mode local/CI), on ne peut que constater
+  # que la demande existe — la carte postée sur le ticket reste du ressort de
+  # l'opérateur qui l'exécute.
+  skip "demande côté gate : $RQ2 (crédentials Jira absents, carte non vérifiée)"
+else
+  C=0
+  for i in 1 2 3 4 5; do
+    # Les commentaires sont paginés : il faut lire la FIN de la liste, pas son
+    # début (un ticket de démonstration en accumulation depuis des mois).
+    TOTAL=$(curl -sS -m 60 -u "$JIRA_EMAIL:$JIRA_TOKEN" "$JIRA_BASE/rest/api/3/issue/$ISSUE?fields=comment" \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["fields"]["comment"]["total"])')
+    START=$(( TOTAL > 20 ? TOTAL - 20 : 0 ))
+    C=$(curl -sS -m 60 -u "$JIRA_EMAIL:$JIRA_TOKEN" \
+      "$JIRA_BASE/rest/api/3/issue/$ISSUE/comment?startAt=$START&maxResults=20" \
+      | grep -c "Approval required — $RQ2")
+    [ "$C" -gt 0 ] && break
+    sleep 3
+  done
+  [ "$C" -gt 0 ] \
+    && check "carte d'approbation $RQ2 postée sur le vrai ticket $ISSUE" 1 \
+    || check "carte d'approbation $RQ2 postée ($C)" 0
+fi
+
+echo "7. Le pilote n'approuve pas sa propre demande"
+# Règle PA-05, jouée avec le vrai compte du pilote : l'auto-approbation est
+# refusée, et le refus le dit. (Accorder un permis, elle, demande un second
+# humain : le site de démonstration n'a qu'un compte pilotable.)
+R=$(gate '{"toolName":"Edit","args":{"file_path":"db/migrations/904_self.sql"}}' "$TOK" | reason)
+RQ3=$(printf '%s' "$R" | grep -oE 'RQ-[0-9]{4}-[0-9]{6}' | head -1)
+if [ -z "$RQ3" ]; then
+  check "demande créée pour l'auto-approbation ($R)" 0
+else
+  A=$(admin "{\"action\":\"approve-request\",\"requestId\":\"$RQ3\",\"approverAccountId\":\"$PILOT_ACCOUNT\"}")
+  case "$A" in
+    *PILOT_CANNOT_APPROVE*) check "auto-approbation du pilote refusée ($RQ3)" 1;;
+    *) check "auto-approbation du pilote refusée ($A)" 0;;
+  esac
+fi
 
 echo
 echo "Régression live : $ok OK, $ko échec(s)"

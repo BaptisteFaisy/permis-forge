@@ -192,13 +192,83 @@ TOUT EST VERT
 (the three unit tests) and `examples/ci/verify-permit.yml` (the CI example now
 sends the project, `PERMIS_PROJECT`).
 
-**What is still open.** The delegation path (`delegate-permit`) does not check
-that the caller owns the permit it delegates: it looks the parent up by id
-among *all* permits. An agent could therefore delegate a permit issued to
+---
+
+## 5. The test environment is the real one, not a rehearsal (12 November 2026)
+
+**What was still simulated.** The harness drove the real web triggers and the
+real Forge SQL, but three things were still made up: the pilot was a fake
+account (`557058:regression`), the approval card was assumed to be posted rather
+than verified, and the agent was a `curl` that carried a hand-written payload.
+
+**What changed.**
+
+1. **The pilot is a real account.** The harness mints its token for the account
+   id read from `~/.atlassian/permis-pilot-account.txt` — a real Atlassian
+   account on the site. The ledger, the requests and the approval cards now
+   carry a real identity, not a fixture.
+2. **The notification is verified, not assumed.** The app posts the approval
+   card on the ticket through the Jira REST API; the harness re-reads the
+   ticket's comments and checks that the card for the request it just created
+   is really there.
+3. **The rule "the pilot does not approve their own request" is played with the
+   real identity** (PA-05): the harness approves with the pilot's own account
+   id and checks that the app refuses.
+
+**Proof** — the production installation, twice in a row:
+
+```console
+5. Vérification CI (point d'application n°3)
+  [OK]    permis émis pour la vérification (PA-2026-000005)
+  [OK]    vérification du permis du projet : trouvé et valide
+  [OK]    vérification depuis un autre projet : invisible
+  [OK]    vérification sans projet : refus 400
+6. Notification approbateur (vrai ticket)
+  [OK]    carte d'approbation RQ-2026-000027 postée sur le vrai ticket PAY-42
+7. Le pilote n'approuve pas sa propre demande
+  [OK]    auto-approbation du pilote refusée (RQ-2026-000028)
+
+Régression live : 32 OK, 0 échec(s)
+TOUT EST VERT
+```
+
+**Two defects found by running it for real.**
+
+- **My check was wrong, not the app.** The first run reported the approval card
+  as missing. It was not: the card was on the ticket. The check read
+  `comment?maxResults=20`, which returns the *first* twenty comments of a
+  ticket that now has fifty-seven — the card was past the window. Reading the
+  end of a paginated list is the fix (`fields=comment` for the total, then
+  `startAt`).
+- **The harness was not replayable.** The verification section asked for a
+  permit on a fixed path; the permit issued by the *previous* run still covered
+  it, the door opened, no request was created, and the four checks failed on the
+  second run. Same family as the drift trap fixed earlier: a fixed target
+  against an idempotent mechanism. The path now carries a timestamp.
+
+**Also fixed for the real client.** The generated Claude Code hook sent only
+`Authorization`; it never named the ticket, so a real agent could never use the
+permit flow (anything beyond N4 is refused without a ticket). The hook now
+sends `X-Permis-Issue` from `PERMIS_AGENT_ISSUE`, like the command bridge
+already did, and the gate refuses an unexpanded `$PERMIS_AGENT_ISSUE` instead
+of treating it as a ticket.
+
+**Still open on the code side.** The delegation path (`delegate-permit`) does
+not check that the caller owns the permit it delegates: it looks the parent up
+by id among *all* permits. An agent could therefore delegate a permit issued to
 another pilot — the "narrowing only" promise would then be relative to a permit
 the caller does not hold. It is a real finding, confirmed by reading the code;
 it is not fixed here, because the live path to it (the Rovo MCP endpoint)
 requires the administrator OAuth activation that is still pending.
+
+**What is still not real, and why.**
+
+| Gap | Blocker |
+|---|---|
+| A real agent client driving the hook end to end | Claude Code 2.1.318 is installed and its binary does support the `http` hook type, but its OAuth session has expired — it answers *"Failed to authenticate"*. One re-login away. |
+| A **second** human approving | The site has a single pilotable account (the project lead). Granting a permit needs someone else; the harness still grants as an operator identity, and the rule that the pilot cannot self-approve is proven with the real account. |
+| The Jira screens rendered by a browser | The harness calls the screen resolvers through the app (`screen` action), not the UI Kit bundle in a real browser: that needs an interactive Jira session. |
+| The external MCP endpoint | Still the administrator OAuth activation. |
 
 ---
 

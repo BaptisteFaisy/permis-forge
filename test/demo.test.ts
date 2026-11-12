@@ -38,8 +38,9 @@ describe('example files', () => {
     const entry = hooks.hooks.PreToolUse[0].hooks[0];
     expect(entry.type).toBe('http');
     expect(entry.onFailure).toBe('block');
-    expect(entry.allowedEnvVars).toEqual(['PERMIS_AGENT_TOKEN']);
+    expect(entry.allowedEnvVars).toEqual(['PERMIS_AGENT_TOKEN', 'PERMIS_AGENT_ISSUE']);
     expect(entry.headers.Authorization).toBe('Bearer $PERMIS_AGENT_TOKEN');
+    expect(entry.headers['X-Permis-Issue']).toBe('$PERMIS_AGENT_ISSUE');
     // Same shape as what the app generates, so the example cannot drift silently.
     expect(hooks.hooks.PreToolUse[0].matcher).toBe(generated.hooks.PreToolUse[0].matcher);
     expect(Object.keys(entry).sort()).toEqual(Object.keys(generated.hooks.PreToolUse[0].hooks[0]).sort());

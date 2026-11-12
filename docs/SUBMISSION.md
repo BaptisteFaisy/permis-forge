@@ -118,12 +118,12 @@ against it.
 | Item | Value |
 |---|---|
 | App | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
-| Site | `one-atlas-cndz.atlassian.net` — Jira, `development` environment, app version **2.26.0** |
-| Production | same app on the `production` environment, app version **2.2.0**, installation `61ad469d-974c-4c30-a272-7b3416b66262` — the version a judge installs from the Marketplace |
+| Site | `one-atlas-cndz.atlassian.net` — Jira, `development` environment, app version **2.27.0** |
+| Production | same app on the `production` environment, app version **2.4.0**, installation `61ad469d-974c-4c30-a272-7b3416b66262` — the version a judge installs from the Marketplace |
 | Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` (development) |
 | Storage | Forge SQL, 10 tables, hash-chained ledger re-verified on every run |
 | Gate latency | p95 **0.63 s** over 30 warm calls, 100 % under one second, write path included |
-| Live replay | `bash scripts/regression-live.sh` — **30 checks, 30 OK** against the deployed installation |
+| Live replay | `bash scripts/regression-live.sh` — **32 checks, 32 OK** against the deployed installation |
 | Offline replay | `node scripts/demo.mjs` — **11/11** acceptance scenarios |
 
 The live harness is the part worth showing: it drives the real web triggers and Forge SQL, with no

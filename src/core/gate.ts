@@ -19,6 +19,7 @@ const EDIT_TOOLS = new Set(['edit', 'write', 'multiedit', 'notebookedit']);
 const READ_TOOLS = new Set(['read', 'grep', 'glob', 'ls']);
 
 const DEFAULT_TOKEN_ENV_VAR = 'PERMIS_AGENT_TOKEN';
+const DEFAULT_ISSUE_ENV_VAR = 'PERMIS_AGENT_ISSUE';
 const DEFAULT_TIMEOUT_SECONDS = 10;
 const DEFAULT_MATCHERS = ['Bash|Edit|Write|MultiEdit'];
 /** Where the command bridge lives, for the clients without a native HTTP hook. */
@@ -47,6 +48,7 @@ export interface GateDecisionResult {
 export interface BuildHookFileOptions {
   gateUrl: string;
   tokenEnvVar?: string;
+  issueEnvVar?: string;
   timeoutSeconds?: number;
   matchers?: string[];
 }
@@ -157,15 +159,22 @@ export function gateDecisionFor(
 /** Build the Claude Code settings hook configuration for the gate endpoint. */
 export function buildHookFile(opts: BuildHookFileOptions): HookFile {
   const tokenEnvVar = opts.tokenEnvVar ?? DEFAULT_TOKEN_ENV_VAR;
+  const issueEnvVar = opts.issueEnvVar ?? DEFAULT_ISSUE_ENV_VAR;
   const timeout = opts.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const matchers = opts.matchers ?? DEFAULT_MATCHERS;
+  // The ticket does not come from the client payload: the hook names it in the
+  // X-Permis-Issue header, read from the environment. Without it, actions beyond
+  // N4 are refused (spec §20) — a silent "no ticket" is safer than guessing one.
   const httpHook: HookFileEntry = {
     type: 'http',
     url: opts.gateUrl,
     timeout,
     onFailure: 'block',
-    headers: { Authorization: `Bearer $${tokenEnvVar}` },
-    allowedEnvVars: [tokenEnvVar],
+    headers: {
+      Authorization: `Bearer $${tokenEnvVar}`,
+      'X-Permis-Issue': `$${issueEnvVar}`,
+    },
+    allowedEnvVars: [tokenEnvVar, issueEnvVar],
   };
 
   return {
