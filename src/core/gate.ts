@@ -102,9 +102,16 @@ export function mapHookEventToAction(
     const target = firstString(args, ['file_path', 'path', 'pattern']);
     return { ...base, declaredClass: 'A-01', target };
   }
+  // Unknown or malformed tool name: never assume it is harmless. A client that
+  // sends a non-string `toolName` (a bridge bug, a new tool, a hostile payload)
+  // must not turn a `rm -rf` into a read — so the arguments still decide what
+  // the action is, exactly as they do for a known tool.
+  const command = firstString(args, ['command', 'cmd', 'script']);
+  const path = firstString(args, ['file_path', 'path', 'notebook_path', 'pattern']);
   return {
     ...base,
-    target: toolName,
+    target: command || path || toolName,
+    command,
     description: safeJsonTruncate(args, MAX_DESCRIPTION_LENGTH),
   };
 }
