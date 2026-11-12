@@ -24,7 +24,7 @@ export const DANGEROUS: Record<string, unknown>[] = [
   { toolName: 'Bash', args: { command: 'psql -c "DROP TABLE users"' } },
   { toolName: 'Bash', args: { command: 'mysql -e "DELETE FROM sessions"' } },
   { toolName: 'Bash', args: { command: 'rm -rf /var/lib/prod' } },
-  { toolName: 'Bash', args: { command: 'git push origin main --force' } },
+  { toolName: 'Bash', args: { command: 'git push origin main -f' } },
   { toolName: 'Edit', args: { file_path: 'db/migrations/001_init.sql' } },
   { toolName: 'Edit', args: { file_path: '.env.production' } },
   { toolName: 'Write', args: { file_path: 'secrets/prod.key' } },
