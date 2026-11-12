@@ -458,6 +458,9 @@ permissions:
 
 app:
   id: ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341
+  # Le schéma officiel de la section app n'accepte ni `name` ni `version`
+  # (additionalProperties: false) : le nom de l'app vit dans la console
+  # développeur, pas dans le manifeste.
   description: >-
     Jira becomes the registry of what a coding agent is allowed to do: policy
     per project, approval on the ticket, signed time-boxed permits and a
