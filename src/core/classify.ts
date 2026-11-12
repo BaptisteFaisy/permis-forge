@@ -79,6 +79,12 @@ export const COMMAND_PATTERNS: PatternEntry[] = [
   { pattern: /\bgo\s+get\b/, actionClass: 'A-05', reason: 'command adds a dependency' },
   { pattern: /terraform\s+(apply|destroy)/, actionClass: 'A-11', reason: 'command changes infrastructure' },
   { pattern: /kubectl\s+(apply|delete)/, actionClass: 'A-11', reason: 'command changes infrastructure' },
+  // Access-control changes: making a path world-writable, or moving its owner,
+  // is how a secret stops being protected. Narrow on purpose — an ordinary
+  // `chmod 644 build/x` is not an incident.
+  { pattern: /\bchmod\b[^|;&]*(\b[0-7]*777\b|\ba\+rwx\b|-[a-z]*R[^|;&]*\b777\b)/i, actionClass: 'A-10', reason: 'command makes a path world-readable and world-writable' },
+  { pattern: /\b(chown|chgrp|setfacl)\b/, actionClass: 'A-10', reason: 'command changes who owns or may access a path' },
+  { pattern: /\b(useradd|usermod|userdel|passwd|groupadd)\b/, actionClass: 'A-10', reason: 'command changes accounts or credentials' },
 ];
 
 const FALLBACK_CLASS = 'A-02';
