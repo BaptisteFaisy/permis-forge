@@ -5,7 +5,8 @@
  * the reason; both are written to the chained ledger. The pilot who drives
  * the agent can never approve their own request (spec PA-05).
  */
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+import { hashToken } from '../core/tokens';
 import { addApproval, canApprove, resolveRequestDecision } from '../core/approvals';
 import { issuePermit, newPermitId } from '../core/permits';
 import { makeEntry } from '../core/ledger';
@@ -196,7 +197,7 @@ export async function createHookToken(
   label?: string,
 ): Promise<{ token: string; hash: string }> {
   const token = randomBytes(24).toString('base64url');
-  const hash = createHash('sha256').update(token).digest('hex');
+  const hash = hashToken(token);
   await repos.hookTokens.save({
     accountId,
     tokenHash: hash,

@@ -17,7 +17,7 @@
  * The web trigger has no platform authentication (spec §18): the personal hook
  * token identifies the pilot, and an unknown token is refused.
  */
-import { createHash } from 'crypto';
+import { hashToken } from '../core/tokens';
 import { buildGateResponseBody, mapHookEventToAction } from '../core/gate';
 import { targetCovers } from '../core/glob';
 import { verifyPermit } from '../core/permits';
@@ -43,10 +43,6 @@ export interface WebTriggerResponse {
 }
 
 type HeaderLookup = (name: string) => string | undefined;
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -204,10 +200,45 @@ async function decisionMode(
 }
 
 /** Entry point of the web trigger. */
+/**
+ * Sliding-window budget for the **unauthenticated** verification path.
+ *
+ * Verification needs no token — a CI runner cannot hold a developer's token —
+ * so nothing identifies the caller and permit ids are sequential. The budget
+ * therefore blunts bulk enumeration. It is per container, not per client, and
+ * Forge may run several: a mitigation, documented as such in HOOK-SETUP §10,
+ * not a guarantee.
+ */
+const VERIFY_WINDOW_MS = 60_000;
+const VERIFY_MAX_PER_WINDOW = 60;
+let verifyWindowStart = 0;
+let verifyCount = 0;
+
+/** True while the current window still has budget left. */
+function allowVerification(nowMs: number): boolean {
+  if (nowMs - verifyWindowStart >= VERIFY_WINDOW_MS) {
+    verifyWindowStart = nowMs;
+    verifyCount = 0;
+  }
+  verifyCount += 1;
+  return verifyCount <= VERIFY_MAX_PER_WINDOW;
+}
+
+/** Test helper: forget the current window. */
+export function resetVerificationBudget(): void {
+  verifyWindowStart = 0;
+  verifyCount = 0;
+}
+
 export async function handleGate(input: WebTriggerRequest | Request | any): Promise<WebTriggerResponse> {
   const { body, header } = await normalize(input);
   try {
     if (typeof body?.permitId === 'string' && body.permitId.length > 0) {
+      if (!allowVerification(Date.now())) {
+        // A 429 makes a CI check fail, which is the safe direction: an
+        // unverifiable permit must not let a pull request through.
+        return respond(429, { error: 'RATE_LIMITED', retryAfterSeconds: VERIFY_WINDOW_MS / 1000 }, 'Too many requests');
+      }
       return await verifyPermitMode(body);
     }
     const token = bearerToken(header);
@@ -215,6 +246,11 @@ export async function handleGate(input: WebTriggerRequest | Request | any): Prom
     const runtime = getRuntimeSync();
     const stored = await runtime.repos.hookTokens.findByTokenHash(hashToken(token));
     if (!stored) return respond(401, { error: 'UNKNOWN_TOKEN' }, 'Unauthorized');
+    // A revoked token stops working at once, and says so: "unknown token" would
+    // send the pilot looking for a typo instead of a revocation.
+    if (await runtime.repos.hookTokens.isRevoked(stored.tokenHash)) {
+      return respond(401, { error: 'TOKEN_REVOKED' }, 'Unauthorized');
+    }
     await runtime.repos.hookTokens.touchLastUsed(stored.tokenHash, runtime.now());
     return await decisionMode(header, body, toHookEvent(body), stored.accountId);
   } catch (error) {
