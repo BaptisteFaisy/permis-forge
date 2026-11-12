@@ -12,8 +12,15 @@
 # outside the permit scope, and the check fails on either.
 #
 # Copy this file to `.github/workflows/` of the repository you want to guard,
-# and set one repository secret:
+# and set two repository secrets:
 #   PERMIS_GATE_URL   the gate web trigger URL (`forge webtrigger create -f gate`)
+#   PERMIS_PROJECT    the Jira project key the pull requests belong to (e.g. PAY)
+#
+# The project is not decoration: the verification path is unauthenticated (a CI
+# runner holds the gate URL, not a pilot's token), so the gate only answers
+# about the permits of the project the request names. A check that does not say
+# which project it guards gets `400 PROJECT_REQUIRED` and fails — the safe
+# direction.
 #
 # No personal token is needed: permit verification is a read-only check of a
 # signature, an expiry and a scope. Deciding an action still requires the
@@ -79,6 +86,7 @@ jobs:
         if: steps.permit.outputs.found != ''
         env:
           GATE_URL: ${{ secrets.PERMIS_GATE_URL }}
+          PROJECT: ${{ secrets.PERMIS_PROJECT }}
           PERMIT: ${{ steps.permit.outputs.found }}
           PATHS: ${{ steps.files.outputs.paths }}
         run: |
@@ -86,16 +94,23 @@ jobs:
             echo "::error::PERMIS_GATE_URL secret is not set"
             exit 1
           fi
+          if [ -z "$PROJECT" ]; then
+            echo "::error::PERMIS_PROJECT secret is not set (the Jira project key this repository guards)"
+            exit 1
+          fi
           payload="$(printf '%s' "$PATHS" | python3 -c '
           import json, sys
           paths = [line.strip() for line in sys.stdin if line.strip()]
-          print(json.dumps({"permitId": sys.argv[1], "paths": paths}))' "$PERMIT")"
+          print(json.dumps({"permitId": sys.argv[1], "projectId": sys.argv[2], "paths": paths}))' "$PERMIT" "$PROJECT")"
           answer="$(curl -sS --max-time 30 -X POST "$GATE_URL" \
             -H 'Content-Type: application/json' -d "$payload")"
           echo "gate answer: $answer"
           printf '%s' "$answer" | python3 -c '
           import json, sys
           answer = json.load(sys.stdin)
+          if answer.get("error") == "PROJECT_REQUIRED":
+              print("::error::The gate refused the verification: it must name the project (PERMIS_PROJECT).")
+              raise SystemExit(1)
           valid = answer.get("valid", False)
           covers = answer.get("covers", False)
           uncovered = answer.get("uncovered") or []

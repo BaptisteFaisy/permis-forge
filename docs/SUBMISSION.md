@@ -107,7 +107,7 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 - **Forge SQL (mysql engine), 10 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`, `token_revocation`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
 - **Hash-chained ledger, SHA-256**: `hash = sha256(canonical_json(entry))`, genesis = 64 zeroes, verified nightly by the `scheduledTrigger` (`src/core/ledger.ts`).
 - **Signed permits, HMAC-SHA256**: signature over the canonical JSON of identifier, scope, expiry, usages and holder, keyed with the installation secret (`src/core/permits.ts`).
-- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **502 offline unit tests in 40 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
+- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **505 offline unit tests in 40 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
 - **`llm` module** for classifying free-form descriptions only; deterministic patterns always come first.
 
 ## Live status — deployed, and replayable on demand
@@ -123,7 +123,7 @@ against it.
 | Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` (development) |
 | Storage | Forge SQL, 10 tables, hash-chained ledger re-verified on every run |
 | Gate latency | p95 **0.63 s** over 30 warm calls, 100 % under one second, write path included |
-| Live replay | `bash scripts/regression-live.sh` — **26 checks, 26 OK** against the deployed installation |
+| Live replay | `bash scripts/regression-live.sh` — **30 checks, 30 OK** against the deployed installation |
 | Offline replay | `node scripts/demo.mjs` — **11/11** acceptance scenarios |
 
 The live harness is the part worth showing: it drives the real web triggers and Forge SQL, with no
@@ -143,7 +143,7 @@ Honest status against the specification's priorities (§13): **S = desirable for
 | PA-16 | Plan first: split, permit batch, deviations | S | **Implemented** (`src/core/plan.ts`), plus `submit-plan`, which groups the approvals of a whole plan into one request |
 | PA-17 | Precedents on the request card | S | **Implemented** (`src/services/precedents.ts`): similar requests, outcome, approvers, permit, decision delay and what happened next |
 | PA-18 | Organisation policy floor | S | **Implemented** (`src/core/policy.ts`): a project may harden but never soften — the org rule wins when it is stricter (`source: 'org-floor'`), exposed on the global page |
-| PA-19 | Permit verification from a CI step | S | **Implemented** — the gate answers a `{ permitId }` POST with the signature, expiry, revocation, suspension and remaining uses; the ready-to-use GitHub Actions workflow is in [`examples/ci/verify-permit.yml`](../examples/ci/verify-permit.yml), verified live against the deployed installation |
+| PA-19 | Permit verification from a CI step | S | **Implemented** — the gate answers a `{ permitId, projectId }` POST with the signature, expiry, revocation, suspension and remaining uses, scoped to the project the check names (without it, `400 PROJECT_REQUIRED`); the ready-to-use GitHub Actions workflow is in [`examples/ci/verify-permit.yml`](../examples/ci/verify-permit.yml), verified live against the deployed installation |
 | PA-20 | Detect undeclared sensitive actions | C | **Implemented** (`src/services/drift.ts`): observed changes classified by the real classifier, compared with the declarations and the approved plan, penalised once and journaled |
 | PA-21 | Policy proposed from history | C | **Implemented** (`src/services/policy-suggestions.ts`): evidence-backed proposals, observe before hardening, never a locked class, never above the org floor |
 | PA-22 | Delegation: narrower permit for sub-agents | C | **Implemented** (`src/services/delegation.ts`): any widening refused with an explicit code, and the whole chain verifiable |
