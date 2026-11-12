@@ -202,7 +202,7 @@ No HTTP 429 was observed at this volume (30-60 sequential calls). The platform f
 as documented: web trigger functions stop after **55 s**, Forge SQL allows **150 DML requests
 per second per install**, **5 s per SELECT** and **10 s per INSERT/UPDATE/DELETE**.
 
-**Second sample (after a redeploy).** 30 warm calls: min 0.338 s, median
+**Second sample (version 2.4.0, after a redeploy).** 30 warm calls: min 0.338 s, median
 0.435 s, **p95 0.696 s**, max 0.919 s, mean 0.465 s, **30/30 under 1 s**; write path 0.491 s.
 The two independent samples agree, so the figure is not a fluke of one container.
 
@@ -369,8 +369,7 @@ consecutive requests.
 itself; the *reception* half (a second account confirming the bell/email notification, and the
 delay over 10 requests) still needs two human accounts and is not claimed.
 
-**Result obtained.** On `one-atlas-cndz.atlassian.net` (development environment, deployment of
-11 November 2026): a gate call on ticket
+**Result obtained.** On `one-atlas-cndz.atlassian.net`, app version 2.16.0: a gate call on ticket
 **ENGS-32** for `db/migrations/012_notify.sql` was refused, created request **RQ-2026-000026**, and
 the app published the approval card as a comment authored by **`permis-agir-mint`** — the six
 fields of spec §8.1 (what / why / how / risk / who / approvers) plus the reminder that the pilot
@@ -405,7 +404,7 @@ Atlassian).
 ## 7. Live end-to-end validation on the deployed installation
 
 Not one of the six points above, but the proof that the product actually runs on Forge. Executed
-on 11 November 2026 against app `a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` (development environment),
+on 11 November 2026 against app `a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` (version 2.2.0),
 installed on `one-atlas-cndz.atlassian.net` (Jira, development environment), through the real
 `gate` web trigger and Forge SQL — no local shortcut, no in-memory adapter.
 
@@ -449,7 +448,7 @@ create the schema explicitly with `{"action":"bootstrap-schema"}`. After the fix
 gated calls on a data-deletion command all answered correctly (deny + a new request each time),
 with no 429.
 
-### 7b. The six Jira screens against Forge SQL (development environment)
+### 7b. The six Jira screens against Forge SQL (version 2.17.0)
 
 The resolvers were unit-tested against the in-memory adapter, and the UI Kit front-end was
 deployed, but nothing had proved the full path — resolver → **Forge SQL adapter** → payload —
@@ -484,7 +483,7 @@ reviewer cannot tell a transcript from a wish. `scripts/regression-live.sh` fixe
 no Jira UI and no in-memory adapter, and exits 0 only when every one passes.
 
 **Run on 12 November 2026** against installation `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0`
-(development, Forge major version 2), project `PAY`, ticket `PAY-42`:
+(development, app version **2.20.0**), project `PAY`, ticket `PAY-42`:
 
 | Group | Checks | Result |
 |---|---|---|
@@ -494,6 +493,18 @@ no Jira UI and no in-memory adapter, and exits 0 only when every one passes.
 
 **18 OK, 0 failures.** Credentials are read from `~/.atlassian/` (gate URL, operator URL,
 installation secret), are never printed, and are not in the repository.
+
+The harness was run twice on 12 November: once before the three corrections of §7d, and again
+against app version 2.20.0 after they were deployed — 18 OK both times. The changed verification
+answer was also checked live, by hand, on a permit that had expired:
+
+```json
+{"permitId":"PA-2026-000001","found":true,"valid":false,"signatureValid":true,
+ "expired":true,"revoked":false,"suspended":false,"usesLeft":0}
+```
+
+No `scope`, and the reason for the refusal is complete: the signature is intact, the permit simply
+expired and its single use was spent.
 
 What the harness deliberately does **not** cover, so that its green is not read as a wider claim:
 
@@ -540,6 +551,17 @@ reason" rule. Two tests lock the behaviour (`test/gate-handler.test.ts`).
 The lesson is unflattering and worth stating: the offline suite covered the decision core well and
 the platform surface poorly, because the platform surface was documented from its own code. The
 harness is now the artefact that keeps those three honest.
+
+**4. A documentation error of my own, because the audit cuts both ways.** While fixing the counts
+above I declared that the app versions quoted in this document ("2.2.0", "2.4.0", "2.16.0",
+"2.17.0") did not exist anywhere in Forge, because neither `manifest.yml` nor `package.json`
+carries a version and `forge version list` prints only *major* versions. That was wrong, and the
+correction is recorded here rather than applied silently: Forge assigns a semantic version to
+every deployment, `forge deploy` prints it (this one is **2.20.0**), and the developer console
+lists them. The four numbers were primary observations made by whoever ran the deployment; they
+are restored. Same failure mode as the three above — I checked two artefacts and concluded about
+a third. The number is printed by the command that performs the deployment, which is the only
+place it can be read.
 
 ---
 

@@ -370,7 +370,7 @@ acceptance scenarios of §21 run end to end with `node scripts/demo.mjs`.
 | PA-22 | Delegation: a sub-agent receives a narrower permit than its parent | C | **Implemented** — `src/services/delegation.ts`: any widening refused with an explicit code, and the whole chain verifiable |
 
 **Deployed and validated live.** The app runs on Jira: `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341`,
-installed on `one-atlas-cndz.atlassian.net` (development environment, Forge major version 2,
+installed on `one-atlas-cndz.atlassian.net` (development environment, app version 2.20.0,
 deployed 12 November 2026). A full end-to-end run
 through the real web trigger and Forge SQL is transcribed in `docs/VALIDATIONS.md` §7: a
 migration is refused and creates request `RQ-2026-000001`, a third party approves it, permit
