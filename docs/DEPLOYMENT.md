@@ -122,7 +122,7 @@ installation** — web triggers, Forge SQL, project policy and all:
 
 ```bash
 bash scripts/regression-live.sh
-# 18 checks: storage and chain integrity, operator authentication, personal
+# 30 checks: storage and chain integrity, operator authentication, personal
 # token, gate decisions (migration refused, read allowed, A-10 and A-15 at N0,
 # CI file reclassified A-07, observe mode, per-project policy, no token = 401),
 # and the six Jira screens through their resolvers.
@@ -162,9 +162,9 @@ guessing. The secrets themselves stay out of the repository.
 | App id | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
 | Developer Space | `laddition` (`abf72fff-edaf-4259-900c-743702f0d1f2`) |
 | Site | `one-atlas-cndz.atlassian.net` (Jira) |
-| Environment | `development` — app version **2.25.0** (Forge major version 2), deployed 12 November 2026 |
+| Environment | `development` — app version **2.26.0** (Forge major version 2), deployed 12 November 2026 |
 | Installation id | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
-| Environment | `production` — app version **2.1.0**, installed 12 November 2026 (the version a judge installs from the Marketplace) |
+| Environment | `production` — app version **2.2.0**, installed 12 November 2026 (the version a judge installs from the Marketplace) |
 | Installation id | `61ad469d-974c-4c30-a272-7b3416b66262` |
 | Gate URL | `https://<installation>.webtrigger.atlassian.app/public/<gate-key>` — stored locally in `~/.atlassian/permis-gate-url.txt`, mode 600 |
 | Operator URL | same host, separate key — `~/.atlassian/permis-admin-url.txt` |
@@ -186,7 +186,7 @@ export FORGE_API_TOKEN="$(tr -d '\r\n' < ~/.atlassian-api-token)"
 export PATH=~/tools/node-v26.12.1-linux-x64/bin:$PATH   # Node >= 26.12.1 for the CLI
 ```
 
-> The app version is printed by `forge deploy` (`The version of your app [2.25.0] …`); it is not
+> The app version is printed by `forge deploy` (`The version of your app [2.26.0] …`); it is not
 > stored in `manifest.yml` or `package.json`, and `forge version list` shows only major versions.
 > Read it from the deployment command — `scripts/deploy.sh` does that for you and records it in
 > `~/.atlassian/permis-deploy-state.json`.
