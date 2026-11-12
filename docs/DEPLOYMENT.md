@@ -162,7 +162,7 @@ guessing. The secrets themselves stay out of the repository.
 | App id | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
 | Developer Space | `laddition` (`abf72fff-edaf-4259-900c-743702f0d1f2`) |
 | Site | `one-atlas-cndz.atlassian.net` (Jira) |
-| Environment | `development` — Forge **major version 2**, last deployed 12 November 2026 00:36 UTC |
+| Environment | `development` — app version **2.20.0** (Forge major version 2), deployed 12 November 2026 |
 | Installation id | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
 | Gate URL | `https://<installation>.webtrigger.atlassian.app/public/<gate-key>` — stored locally in `~/.atlassian/permis-gate-url.txt`, mode 600 |
 | Operator URL | same host, separate key — `~/.atlassian/permis-admin-url.txt` |
@@ -177,6 +177,10 @@ export FORGE_API_TOKEN="$(tr -d '\r\n' < ~/.atlassian-api-token)"
 export PATH=~/tools/node-v26.12.1-linux-x64/bin:$PATH   # Node >= 26.12.1 for the CLI
 ```
 
+> The app version is printed by `forge deploy` (`The version of your app [2.20.0] …`); it is not
+> stored in `manifest.yml` or `package.json`, and `forge version list` shows only major versions.
+> Read it from the deployment command.
+>
 > The Node version matters: the CLI refuses `^22.23.4 || ^24.22.1 || >=26.12.1` outside that
 > range, and the `node` first in `PATH` on this host is **26.9.0** — the CLI answers
 > *"Unsupported Node.js version"* and exits. Two recipes work:

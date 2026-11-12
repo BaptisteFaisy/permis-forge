@@ -115,7 +115,7 @@ against it.
 | Item | Value |
 |---|---|
 | App | `ari:cloud:ecosystem::app/a700e3ab-b722-4ae3-8a8a-b9f1a1b4c341` |
-| Site | `one-atlas-cndz.atlassian.net` — Jira, development environment, Forge major version 2 |
+| Site | `one-atlas-cndz.atlassian.net` — Jira, development environment, app version **2.20.0** |
 | Installation | `d2d079ea-988f-4b26-8e34-a5db0dd7cdb0` |
 | Storage | Forge SQL, 9 tables, hash-chained ledger re-verified on every run |
 | Gate latency | p95 **0.63 s** over 30 warm calls, 100 % under one second, write path included |
