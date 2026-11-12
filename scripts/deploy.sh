@@ -73,6 +73,11 @@ if [ -z "${FORGE_API_TOKEN:-}" ]; then
 fi
 [ -n "$FORGE_API_TOKEN" ] || die "jeton vide"
 
+# Sans keychain sur ce poste, la CLI lit ces deux variables : elle doit les
+# voir dans l'environnement, sinon elle répond « Not logged in ».
+export FORGE_EMAIL="$EMAIL"
+export FORGE_API_TOKEN
+
 step "Compte $EMAIL — site $SITE — CLI $("$FORGE" --version 2>/dev/null | tail -1)"
 
 run() {
