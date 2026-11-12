@@ -246,3 +246,69 @@ describe('handleGate', () => {
     expect(JSON.parse(response.body).hookSpecificOutput.permissionDecision).toBe('allow');
   });
 });
+
+describe('a malformed hook payload is refused, not interpreted', () => {
+  let token: string;
+
+  beforeEach(async () => {
+    resetDefaultRepositories();
+    const repos = getDefaultRepositories();
+    token = (await createHookToken(repos, 'pilot-123', 'unit test')).token;
+  });
+
+  /** The ledger size, to prove a refusal here writes nothing. */
+  async function entries(): Promise<number> {
+    const repos = getDefaultRepositories();
+    return (await repos.ledger.list({ projectId: 'PAY' })).length;
+  }
+
+  it.each([
+    ['a boolean', true],
+    ['a number', 42],
+    ['an object', { toolName: 'Bash' }],
+    ['null', null],
+    ['missing', undefined],
+    ['an empty string', '   '],
+  ])('refuses a tool name that is %s', async (_label, toolName) => {
+    const { statusCode, payload } = await call(
+      { toolName, args: { file_path: 'README.md' } },
+      { token, issueKey: 'PAY-1' },
+    );
+
+    expect(statusCode).toBe(200);
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(payload.hookSpecificOutput.permissionDecisionReason).toContain('Malformed hook payload');
+  });
+
+  it('refuses a dangerous command even when the tool name is the only thing wrong', async () => {
+    const { payload } = await call(
+      { toolName: true, args: { command: 'rm -rf /var/lib/prod' } },
+      { token, issueKey: 'PAY-1' },
+    );
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+
+  it('still allows a well-formed tool the app does not know: an unknown name is not a malformed one', async () => {
+    const { statusCode, payload } = await call(
+      { toolName: 'SomeBrandNewClientTool', args: { file_path: 'README.md' } },
+      { token, issueKey: 'PAY-1' },
+    );
+
+    expect(statusCode).toBe(200);
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('allow');
+  });
+
+  it('classifies a well-formed unknown tool from its arguments', async () => {
+    const { payload } = await call(
+      { toolName: 'SomeBrandNewClientTool', args: { command: 'rm -rf /var/lib/prod' } },
+      { token, issueKey: 'PAY-1' },
+    );
+    expect(payload.hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+
+  it('writes nothing to the ledger: a transport defect is logged, not journalled', async () => {
+    const before = await entries();
+    await call({ toolName: 42, args: { command: 'rm -rf /' } }, { token, issueKey: 'PAY-1' });
+    expect(await entries()).toBe(before);
+  });
+});

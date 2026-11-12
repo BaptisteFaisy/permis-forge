@@ -188,3 +188,16 @@ export function buildGateResponseBody(
     },
   };
 }
+
+/**
+ * Is the hook payload's tool name usable?
+ *
+ * A legitimate client always sends a non-empty string. Anything else is a
+ * contract violation — a bridge bug, an old client, a hostile payload — and it
+ * must be refused rather than interpreted: coercing it to a placeholder turns a
+ * malformed request into a plausible-looking one, which is exactly how the
+ * fail-open found by the fuzzer worked (docs/THREAT-MODEL.md §3).
+ */
+export function isWellFormedToolName(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}

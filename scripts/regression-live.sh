@@ -92,6 +92,15 @@ CODE=$(curl -sS -m 60 -o /dev/null -w '%{http_code}' -X POST "$GATE" -H 'Content
   -d '{"toolName":"Bash","args":{"command":"ls"}}')
 [ "$CODE" = "401" ] && check "sans jeton : refus 401 (fermé par défaut)" 1 || check "sans jeton ($CODE)" 0
 
+# The fail-open found by the fuzzer (docs/THREAT-MODEL.md §3): a payload whose tool
+# name was not a string used to be interpreted, and a `rm -rf` was answered `allow`.
+R=$(gate '{"toolName":true,"args":{"command":"rm -rf /var/lib/prod"}}' "$TOK" | decision)
+[ "$R" = "deny" ] && check "payload malformé (toolName non chaîne) : refus" 1 || check "payload malformé ($R)" 0
+R=$(gate '{"toolName":"Bash","args":{"command":"rm -rf /var/lib/prod"}}' "$TOK" | decision)
+[ "$R" = "deny" ] && check "commande destructive : refus" 1 || check "commande destructive ($R)" 0
+R=$(gate '{"toolName":"BrandNewClientTool","args":{"file_path":"README.md"}}' "$TOK" | decision)
+[ "$R" = "allow" ] && check "outil inconnu mais bien formé : autorisé" 1 || check "outil inconnu ($R)" 0
+
 echo "3. Écrans Jira (résolveur → Forge SQL)"
 for E in projectSettings projectPage issuePanel globalPage personalSettings; do
   C=$(admin "{\"action\":\"screen\",\"screen\":\"$E\",\"projectId\":\"$PROJECT\",\"issueKey\":\"$ISSUE\"}" \
