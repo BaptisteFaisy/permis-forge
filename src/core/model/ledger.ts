@@ -22,7 +22,22 @@ export type LedgerKind =
   | 'plan-submitted'
   | 'deviation'
   | 'policy-changed'
-  | 'correction';
+  | 'correction'
+  | 'anchor';
+
+/**
+ * Detail payload of an `anchor` entry: the daily Merkle root of the day's
+ * entry hashes, published outside the app database so a third party can
+ * verify the journal without trusting it (docs/ANCHORING.md).
+ */
+export interface AnchorDetail {
+  /** Merkle root of the day's entry hashes (64 hex chars). */
+  root: string;
+  /** Number of entries anchored. */
+  count: number;
+  /** UTC day anchored, `YYYY-MM-DD`. */
+  day: string;
+}
 
 /** Append-only, hash-chained journal entry (spec §11, §17). */
 export interface LedgerEntry {
