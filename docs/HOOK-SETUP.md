@@ -455,5 +455,44 @@ The server reads its credentials from `~/.atlassian/` (`permis-gate-url.txt`,
 
 **Honest scope.** The MCP path is *cooperative* by nature — the agent must call the tool. That is
 the product's own model: the agent asks, and an action that ran undeclared is caught by drift
-detection. The *mechanical* guarantee stays with the hook. This is the same trade-off as the Rovo
+detection. The *mechanical* guarantee stays with the hook — and, on opencode, with the
+runtime permission hook of §13, which is mechanical too. This is the same trade-off as the Rovo
 MCP tools, just served without the Atlassian OAuth dance.
+
+## 13. The permission hook — opencode's mechanical path (13 November 2026)
+
+opencode v2 removed `tool.execute.before`, and the 12 November run behind §12 read that as "no
+mechanical path, MCP only". That conclusion was wrong for v2.1.1. opencode has a **permission
+system** whose decisions can be reviewed by a plugin hook, `permission.evaluate`, which runs
+*before the action* on every `allow` or `ask` decision.
+
+`examples/opencode-plugin/permis/` is that plugin. It sends the gate the same PreToolUse payload as
+the shell bridge (§9) and the MCP server (§12), and applies the answer:
+
+| Gate says | Plugin does |
+|---|---|
+| `deny` | sets the effect to `deny` — the tool never runs, the model receives the reason |
+| `ask` (no permit yet, N2/N3) | escalates to `ask` — a human decides |
+| `allow` | leaves the decision alone |
+| unreachable, HTTP error, unreadable answer, no credentials | `deny` — fail closed (the same rule as the bridge) |
+
+The hook can only tighten the decision: `allow → ask → deny`, never the other way round. It
+intercepts `edit` and `shell` only; `read`, `grep` and `glob` pass straight through, so the gate is
+not on the hot path of every lookup. A compound shell command arrives decomposed and **every**
+subcommand is checked — one refusal blocks the whole command.
+
+Install (one entry, then restart so the plugin loads):
+
+```jsonc
+// ~/.config/opencode/opencode.json
+{ "plugins": ["/abs/path/examples/opencode-plugin/permis"] }
+```
+
+Credentials are `PERMIS_GATE_URL` / `PERMIS_AGENT_TOKEN` / `PERMIS_AGENT_ISSUE`, or the files under
+`~/.atlassian/` (§7). They are read when the plugin loads: `opencode service restart` after changing them.
+
+**What this changes, and what it does not.** On opencode the gate is now mechanical: the runtime
+asks, the runtime blocks, and the agent cannot skip it by declining to call a tool — unlike §12's MCP
+path, which stays cooperative. It is still a *client-side* mechanism: a client without the plugin is
+bound only by the merge gate (§10). The guarantee is therefore per client, and the merge gate remains
+the backstop no client can talk its way out of.

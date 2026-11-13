@@ -107,7 +107,7 @@ Permits — not prompts — as the unit of authorisation: signed, scoped, time-b
 - **Forge SQL (mysql engine), 10 tables**: `policy_rule`, `zone`, `agent_profile`, `request`, `permit`, `ledger`, `trust_event`, `kill_switch`, `hook_token`, `token_revocation`. No foreign keys exist on Forge SQL, so relations are columns and integrity is enforced by the application.
 - **Hash-chained ledger, SHA-256**: `hash = sha256(canonical_json(entry))`, genesis = 64 zeroes, verified nightly by the `scheduledTrigger` (`src/core/ledger.ts`).
 - **Signed permits, HMAC-SHA256**: signature over the canonical JSON of identifier, scope, expiry, usages and holder, keyed with the installation secret (`src/core/permits.ts`).
-- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **509 offline unit tests in 42 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
+- **Pure decision engine**: `src/core/` imports no Atlassian SDK — classification, policy resolution with organisation floor, approvals (no self-approval, N1 double approval), permits, trust capital, plan-first, kill switch, hook mapping — covered by **518 offline unit tests in 43 Jest suites** (`npm test`), with the in-memory storage adapter standing in for Forge SQL.
 - **`llm` module** for classifying free-form descriptions only; deterministic patterns always come first.
 
 ## Live status — deployed, and replayable on demand
