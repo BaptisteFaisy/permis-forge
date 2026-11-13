@@ -335,3 +335,47 @@ TOUT EST VERT
 
 `docs/SUBMISSION.md` now quotes **30 checks, 30 OK** — the number the harness
 actually prints, which the live mode of the claims verifier re-checks.
+
+## 6. opencode is gated mechanically now — proven both ways (13 November 2026)
+
+**What the 12 November conclusion missed.** The last run behind §5 concluded that opencode had no
+pre-tool hook, so only the cooperative MCP path applied. opencode v2.1.1 does have one:
+`permission.evaluate`, a plugin hook that runs before the action (HOOK-SETUP §13). The plugin is
+`examples/opencode-plugin/permis/`.
+
+**The proof runs the same plugin, the same model and the same configuration twice** and changes only
+the target path. opencode's own rules allow everything (`{"action":"*","resource":"*","effect":"allow"}`),
+so the *only* thing that can block a write is the plugin asking the gate.
+
+Run A — a path the policy refuses (`pay-migrations-approval`, N2):
+
+```console
+> build · ag/claude-sonnet-4-6
+✗ Write db/migrations/912_probe_plugin.sql failed
+Error: Permis d'agir: Project rule pay-migrations-approval applied to A-08: level N2.
+No valid permit covers this action. Request: RQ-2026-000090 Level: N2
+…
+=== APRÈS A ===
+FICHIER ABSENT (bloqué par le gate)
+```
+
+Run B — a path the policy allows (N5), same command shape:
+
+```console
+> build · ag/claude-sonnet-4-6
+← Write README.demo.md
+Created file successfully: README.demo.md
+…
+=== APRÈS B ===
+FICHIER ECRIT :
+bonjour depuis permis.
+```
+
+**What this establishes.** The refusal happens *before* the write (the file never appears), the reason
+reaches the model, and the gate stays a gate: an allowed path is written normally. Nine unit tests
+(`test/permis-opencode-plugin.test.ts`) pin the action mapping, the tightening rule and every
+fail-closed case against a stub gate, with no network.
+
+**What it does not establish.** The mechanism is per client: an opencode session without the plugin is
+bound only by the merge gate. And the plugin reads its credentials when it loads — a rotated token
+needs a restart, the same rule as the hook (§7 of HOOK-SETUP).
