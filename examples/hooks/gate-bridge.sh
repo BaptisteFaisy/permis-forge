@@ -90,6 +90,14 @@ case "$STATUS" in
     if [ -s "$RESPONSE_FILE" ]; then
       cat "$RESPONSE_FILE"
       printf '\n'
+      # A refusal must block the call. The decision is on stdout for the
+      # clients that parse it (Claude Code, Cursor), but a client that only
+      # looks at the exit code — a wrapper script, a CI step, an agent running
+      # a command — would otherwise run the action anyway. Exit 2 blocks both.
+      if grep -q '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"' "$RESPONSE_FILE"; then
+        printf '%s\n' "Permis d'agir refused this action (the decision is above)." >&2
+        exit 2
+      fi
       exit 0
     fi
     deny "gate returned an empty body (HTTP $STATUS)"
