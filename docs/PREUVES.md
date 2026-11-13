@@ -379,3 +379,18 @@ fail-closed case against a stub gate, with no network.
 **What it does not establish.** The mechanism is per client: an opencode session without the plugin is
 bound only by the merge gate. And the plugin reads its credentials when it loads — a rotated token
 needs a restart, the same rule as the hook (§7 of HOOK-SETUP).
+
+**And on the workstation.** The same plugin is wired into
+`~/.config/opencode/opencode.json` (`"plugins": ["…/examples/opencode-plugin/permis"]`, backup kept)
+and the background service was restarted. A run from a directory with **no project config** — only
+the global one — was still refused on a migration path:
+
+```console
+✗ Write db/migrations/913_probe_global.sql failed
+Error: Permis d'agir: Project rule pay-migrations-approval applied to A-08: level N2.
+No valid permit covers this action. Request: RQ-2026-000091 Level: N2
+FICHIER ABSENT (bloqué par le gate, via le plugin global)
+```
+
+The gate is therefore in force for every opencode session on this machine, not only inside a
+demonstration directory.
