@@ -10,7 +10,7 @@ import { makeEntry } from '../../core/ledger';
 import { maskSecrets } from '../../core/mask';
 import { parsePlan } from '../../core/plan';
 import { newPermitId } from '../../core/permits';
-import { ActionRequest, ApprovalRequest } from '../../core/types';
+import { ActionRequest, ApprovalRequest, Permit, Repositories } from '../../core/types';
 import { delegatePermit as buildChildPermit, recordDelegation, withParent } from '../../services/delegation';
 import { recordDeclaredAction } from '../../services/declared-action';
 import {
@@ -253,8 +253,48 @@ async function approverRolesFor(
   return roles.length > 0 ? Array.from(new Set(roles)) : ['project-admin'];
 }
 
+type ParentLookup =
+  | { parent: Permit }
+  | { error: 'MISSING_PILOT' | 'PARENT_NOT_FOUND' | 'PARENT_NOT_HELD'; note: string };
+
 /**
- * delegate-permit — a parent permit yields a narrower one to a sub-agent
+ * The permit a delegation starts from must be one the caller actually holds.
+ *
+ * The parent is looked up among the permits of the caller's profile, then the
+ * pilot account is checked too: same holder profile AND same pilot. Without
+ * this, an agent could hand a sub-agent a permit issued to another pilot, and
+ * the "narrowing only" promise would be relative to a grant it never received.
+ *
+ * A refusal says which of the three cases it is, so the answer stays
+ * explainable: no authenticated pilot, unknown permit id, or a permit that
+ * exists but belongs to someone else.
+ */
+async function heldParentPermit(
+  repos: Repositories,
+  parentId: string,
+  accountId: string,
+  profileId: string,
+): Promise<ParentLookup> {
+  if (!accountId || accountId === 'unknown') {
+    return {
+      error: 'MISSING_PILOT',
+      note: 'A delegation must say which pilot account it acts for; this caller has no authenticated identity.',
+    };
+  }
+  const held = await repos.permits.listPermits({ profileId });
+  const own = held.find((permit) => permit.id === parentId && permit.pilotAccountId === accountId);
+  if (own) return { parent: own };
+  const elsewhere = (await repos.permits.listPermits({})).some((permit) => permit.id === parentId);
+  if (!elsewhere) {
+    return { error: 'PARENT_NOT_FOUND', note: `No permit ${parentId} in this installation.` };
+  }
+  return {
+    error: 'PARENT_NOT_HELD',
+    note: 'You can only delegate a permit you hold: same holder profile and same pilot account. Name yours with agentProfile when the permit was issued to a named profile.',
+  };
+}
+
+/** delegate-permit — a parent permit yields a narrower one to a sub-agent
  * (spec §26). Widening is refused with an explicit code, so the answer is
  * always explainable. The parent link is not a column of the permit table: it
  * is journalled by `recordDelegation`, which is the tamper-evident place for a
@@ -273,9 +313,16 @@ export async function delegatePermit({ payload, context }: HandlerArgs): Promise
     });
   }
 
-  const permits = await runtime.repos.permits.listPermits({});
-  const parent = permits.find((item) => item.id === parentId);
-  if (!parent) return toJson({ ok: false, error: 'PARENT_NOT_FOUND', parentPermitId: parentId });
+  const lookup = await heldParentPermit(
+    runtime.repos,
+    parentId,
+    resolveAccountId(context),
+    resolveProfileId(payload),
+  );
+  if ('error' in lookup) {
+    return toJson({ ok: false, error: lookup.error, parentPermitId: parentId, note: lookup.note });
+  }
+  const parent = lookup.parent;
 
   const issuedAt = runtime.now();
   const year = new Date(issuedAt).getUTCFullYear();
