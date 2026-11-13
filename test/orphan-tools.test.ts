@@ -164,7 +164,7 @@ describe('delegate-permit — narrowing only', () => {
     const parent = await parentPermit();
     const result = JSON.parse(
       await delegatePermit({
-        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', target: 'db/migrations/001.sql', ttlMinutes: 15, uses: 1 },
+        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', agentProfile: 'parent-agent', target: 'db/migrations/001.sql', ttlMinutes: 15, uses: 1 },
         context: { accountId: 'pilot-1' },
       }),
     );
@@ -184,7 +184,7 @@ describe('delegate-permit — narrowing only', () => {
     const parent = await parentPermit();
     const result = JSON.parse(
       await delegatePermit({
-        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', target: 'secrets/prod.env' },
+        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', agentProfile: 'parent-agent', target: 'secrets/prod.env' },
         context: { accountId: 'pilot-1' },
       }),
     );
@@ -198,7 +198,7 @@ describe('delegate-permit — narrowing only', () => {
     const parent = await parentPermit(2);
     const result = JSON.parse(
       await delegatePermit({
-        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', target: 'db/migrations/001.sql', uses: 5 },
+        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', agentProfile: 'parent-agent', target: 'db/migrations/001.sql', uses: 5 },
         context: { accountId: 'pilot-1' },
       }),
     );
@@ -211,7 +211,7 @@ describe('delegate-permit — narrowing only', () => {
     const parent = await parentPermit(3, 30);
     const result = JSON.parse(
       await delegatePermit({
-        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', target: 'db/migrations/001.sql', ttlMinutes: 600 },
+        payload: { parentPermitId: parent.id, childProfileId: 'child-agent', agentProfile: 'parent-agent', target: 'db/migrations/001.sql', ttlMinutes: 600 },
         context: { accountId: 'pilot-1' },
       }),
     );
@@ -223,7 +223,7 @@ describe('delegate-permit — narrowing only', () => {
   it('answers PARENT_NOT_FOUND rather than inventing a permit', async () => {
     const result = JSON.parse(
       await delegatePermit({
-        payload: { parentPermitId: 'PA-2026-999999', childProfileId: 'child-agent', target: 'db/migrations/001.sql' },
+        payload: { parentPermitId: 'PA-2026-999999', childProfileId: 'child-agent', agentProfile: 'parent-agent', target: 'db/migrations/001.sql' },
         context: { accountId: 'pilot-1' },
       }),
     );

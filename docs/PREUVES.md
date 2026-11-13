@@ -290,13 +290,10 @@ mechanical guarantee stays with the hook.
   `combo/claude-opus-5-5` no longer exists at the provider; `ag/claude-sonnet-4-6`
   works.)
 
-**Still open on the code side.** The delegation path (`delegate-permit`) does
-not check that the caller owns the permit it delegates: it looks the parent up
-by id among *all* permits. An agent could therefore delegate a permit issued to
-another pilot — the "narrowing only" promise would then be relative to a permit
-the caller does not hold. It is a real finding, confirmed by reading the code;
-it is not fixed here, because the live path to it (the Rovo MCP endpoint)
-requires the administrator OAuth activation that is still pending.
+**Still open on the code side — fixed since.** The delegation path
+(`delegate-permit`) did not check that the caller owns the permit it delegates:
+it looked the parent up by id among *all* permits. §7 closes that hole and
+shows the same tests failing before the fix and passing after it.
 
 **What is still not real, and why.**
 
@@ -394,3 +391,53 @@ FICHIER ABSENT (bloqué par le gate, via le plugin global)
 
 The gate is therefore in force for every opencode session on this machine, not only inside a
 demonstration directory.
+
+---
+
+## 7. A delegation can only narrow a permit the caller holds (13 November 2026)
+
+**The hole, as it stood.** §5 recorded it honestly and left it open: `delegate-permit` looked the
+parent up by id among *all* permits, so nothing tied the permit being narrowed to the caller. An
+agent could hand a sub-agent a permit issued to another pilot — the "narrowing only" promise was
+then relative to a grant the caller never received.
+
+**The fix.** `heldParentPermit()` (`src/mcp/handlers/writes.ts`) looks the parent up **among the
+permits of the caller's profile**, then requires the **pilot account** to match too. Three distinct
+answers, so nothing is guessed:
+
+| Case | Answer |
+|---|---|
+| the caller has no authenticated pilot account | `MISSING_PILOT` |
+| the permit id does not exist | `PARENT_NOT_FOUND` |
+| the permit exists, but for another profile or another pilot | `PARENT_NOT_HELD` |
+
+To delegate a permit issued to a named profile, the caller names itself (`agentProfile`). A permit
+issued through the default path belongs to the `default` profile, so nothing changes for it.
+
+**Proof — the same six tests, run before and then after the fix**
+(`test/delegation-authority.test.ts`, the real handlers against the in-memory repositories):
+
+```console
+$ git stash push src/mcp/handlers/writes.ts && npx jest test/delegation-authority.test.ts
+    ✕ refuses a permit issued to another pilot
+    ✕ refuses another agent’s permit, even for the same pilot
+    ✕ refuses a permit held by a named profile when the caller names none
+    ✕ refuses when the caller has no authenticated account
+    ✓ still reports a parent that does not exist
+    ✓ delegates the permit it holds, and the child keeps the same pilot
+    Expected: false
+    Received: true            ← another pilot's permit WAS delegated
+Tests:       4 failed, 2 passed, 6 total
+
+$ git stash pop && npx jest test/delegation-authority.test.ts
+Tests:       6 passed, 6 total
+```
+
+The `Received: true` is the finding, not a detail: before the fix the handler answered "ok" and
+saved a child permit signed with the installation secret for a grant the caller never had. The
+refusals are not blanket either — the last line delegates the permit the caller *does* hold, and the
+child keeps the same pilot account.
+
+**What it does not prove.** The live path to this handler is the Rovo MCP endpoint, which still needs
+the administrator OAuth activation: the proof runs the real handler against the real repositories,
+not the deployed MCP transport.
