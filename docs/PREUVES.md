@@ -253,6 +253,28 @@ sends `X-Permis-Issue` from `PERMIS_AGENT_ISSUE`, like the command bridge
 already did, and the gate refuses an unexpanded `$PERMIS_AGENT_ISSUE` instead
 of treating it as a ticket.
 
+**The client integration now runs natively on opencode and ZeroClaw.** Neither
+ships a tool hook, but both consume MCP tools — so `scripts/permis-mcp-server.mjs`
+(a zero-dependency stdio MCP server) serves `check-permission` / `declare-action`
+locally and calls the `gate` web trigger. With opencode, a real agent called
+`check-permission`, the gate refused (`pay-migrations-approval`, N2,
+`RQ-2026-000087`), and the file was not written — the product's own flow, no
+Claude Code involved:
+
+```console
+⚙ tools.permis["check-permission"]({ action: "Edit", target: "db/migrations/910_probe.sql", … })
+🚫 Permission denied — edit blocked.
+| Decision | deny | Request ID | RQ-2026-000087 | Required level | N2 |
+The file db/migrations/910_probe.sql was not modified.
+```
+
+The server is registered for both clients (`opencode.json` → `mcp.permis`;
+`~/.zeroclaw/config.toml` → `[[mcp.servers]] permis` + bundle `permis` for
+agent `b`), reading its credentials from `~/.atlassian/`. Documented in
+HOOK-SETUP §12, with the honest caveat: the MCP path is cooperative by nature
+(that is the product's model — the agent asks, drift catches the rest); the
+mechanical guarantee stays with the hook.
+
 **And a real client ran — `opencode` v2.1.1, a real model — and found two things.**
 
 - The shipped `examples/hooks/gate-bridge.sh` **failed open**: it printed the
