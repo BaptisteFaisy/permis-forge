@@ -425,11 +425,13 @@ the event on its own.
 
 ## 12. The MCP path, for clients without a hook (opencode, ZeroClaw, …)
 
-The hook (`§9`, `§11`) is the mechanical path, but only Claude Code ships a native HTTP hook.
-opencode v2 has no tool hook; ZeroClaw neither. Both consume **MCP tools**. The product's MCP
-server lives behind the Atlassian MCP endpoint, which needs an administrator OAuth activation —
-so `scripts/permis-mcp-server.mjs` serves the same tools locally, speaking stdio MCP, and calls
-the `gate` web trigger.
+The hook (`§9`, `§11`) is the mechanical path. Claude Code ships a native HTTP hook; opencode v2
+exposes the equivalent through its `permission.evaluate` plugin hook (§13). ZeroClaw 0.9 also has
+a native in-process `before_tool_call` hook that can cancel a call — but no Permis handler is
+registered for it in the deployed configuration, so ZeroClaw still uses the cooperative MCP path
+below. The product's MCP server lives behind the Atlassian MCP endpoint, which needs an
+administrator OAuth activation — so `scripts/permis-mcp-server.mjs` serves the same tools locally,
+speaking stdio MCP, and calls the `gate` web trigger.
 
 ```bash
 # opencode (~/.config/opencode/opencode.json)
@@ -496,3 +498,47 @@ asks, the runtime blocks, and the agent cannot skip it by declining to call a to
 path, which stays cooperative. It is still a *client-side* mechanism: a client without the plugin is
 bound only by the merge gate (§10). The guarantee is therefore per client, and the merge gate remains
 the backstop no client can talk its way out of.
+
+## 14. ZeroClaw 0.9 has the same pre-tool hook — the handler is what is missing (13 November 2026)
+
+§12 said "ZeroClaw neither [ships a tool hook]". That was read off the 0.8 documentation and it is
+wrong for 0.9, in the same way the opencode v1 reading was wrong for opencode v2 (§13). ZeroClaw
+0.9 exposes a native, in-process pre-tool hook that can **cancel** the call.
+
+The hook point, in the runtime the daemon runs:
+
+| What | Where |
+|---|---|
+| the hook trait, `before_tool_call` returning `HookResult::Cancel(reason)` | `crates/zeroclaw-api/src/hook.rs` |
+| the call site, where a cancel becomes `success: false` and the tool never runs | `crates/zeroclaw-runtime/src/agent/turn/call_prep.rs` |
+| the runner that dispatches the chain before every tool call | `crates/zeroclaw-runtime/src/hooks/runner.rs` |
+
+So the runtime asks, and the runtime can block — the same shape as opencode's `permission.evaluate`.
+What is missing is not the mechanism but the **handler**: the shipped configuration registers the
+built-in `command_logger` and `webhook_audit` hooks, and neither one consults a policy. `webhook_audit`
+posts *after* the call, and it never cancels.
+
+**How to reproduce the capability.** The strings the runtime emits are in the shipped binary:
+
+```console
+$ strings /opt/zeroclaw/bin/zeroclaw | grep -c 'before_tool_call cancelled by hook'
+1
+```
+
+and the runtime's own regression test covers the cancellation path:
+
+```console
+$ cargo test -p zeroclaw-runtime --lib hook_cancelled_call_reaches_abandonment_not_after
+```
+
+**What this does and does not establish.** It establishes that a mechanical ZeroClaw path is
+*possible* without patching the runtime: a handler implementing `before_tool_call` would post the
+same PreToolUse payload as the bridge (§9) and the plugin (§13), and return `Cancel` on a refusal.
+It does **not** establish that such a handler exists — until it does, ZeroClaw remains on §12's
+cooperative MCP path, and the merge gate (§10) stays the only backstop for it.
+
+**Why the handler is not in this repository.** `HookHandler` is a Rust trait: ZeroClaw loads its
+handlers in-process, from the runtime crate, not from a plugin or a script. Registering a Permis
+handler therefore means a change in the ZeroClaw runtime, not a file added here. The contract the
+handler would implement is already fixed by §9 and §13 — same payload, same fail-closed rule, same
+`X-Permis-Issue` header — so the product side needs no new logic.

@@ -254,7 +254,8 @@ already did, and the gate refuses an unexpanded `$PERMIS_AGENT_ISSUE` instead
 of treating it as a ticket.
 
 **The client integration now runs natively on opencode and ZeroClaw.** Neither
-ships a tool hook, but both consume MCP tools — so `scripts/permis-mcp-server.mjs`
+shipped a tool hook *at the time of this run*, but both consume MCP tools — so
+`scripts/permis-mcp-server.mjs`
 (a zero-dependency stdio MCP server) serves `check-permission` / `declare-action`
 locally and calls the `gate` web trigger. With opencode, a real agent called
 `check-permission`, the gate refused (`pay-migrations-approval`, N2,
@@ -441,3 +442,46 @@ child keeps the same pilot account.
 **What it does not prove.** The live path to this handler is the Rovo MCP endpoint, which still needs
 the administrator OAuth activation: the proof runs the real handler against the real repositories,
 not the deployed MCP transport.
+
+---
+
+## 8. ZeroClaw 0.9 can cancel a tool call before it runs (13 November 2026)
+
+**What the earlier conclusion missed.** §5 and §12 stated that ZeroClaw has no tool hook, so only
+the cooperative MCP path applied to it. That was read off the 0.8 documentation. It is wrong for
+ZeroClaw 0.9 — the same kind of mistake the opencode v1 reading made for opencode v2, corrected
+in §6.
+
+**The proof.** ZeroClaw 0.9's runtime exposes a native pre-tool hook that can cancel the call, and
+the runtime's own regression test exercises exactly that path:
+
+```console
+$ cargo test -p zeroclaw-runtime --lib hook_cancelled_call_reaches_abandonment_not_after
+running 1 test
+test agent::turn::call_prep::tests::hook_cancelled_call_reaches_abandonment_not_after ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6228 filtered out
+```
+
+The capability is in the binary the daemon actually runs:
+
+```console
+$ strings /opt/zeroclaw/bin/zeroclaw | grep -c 'before_tool_call cancelled by hook'
+1
+```
+
+**What it means.** The runtime asks, and the runtime can block: `before_tool_call` returns
+`HookResult::Cancel(reason)`, and the call site turns that into `success: false` without ever
+executing the tool. The mechanism is the same shape as opencode's `permission.evaluate` (§6), so a
+Permis handler would post the same PreToolUse payload as the bridge (§9 of HOOK-SETUP) and refuse
+by cancelling.
+
+**What it does not mean.** It does not mean ZeroClaw is gated. The shipped configuration registers
+only the built-in `command_logger` and `webhook_audit` hooks, and neither consults a policy:
+`webhook_audit` posts *after* the call and never cancels. `HookHandler` is a Rust trait loaded
+in-process by the runtime — not a plugin, not a script — so the handler is a change in the
+ZeroClaw runtime, not a file in this repository. ZeroClaw therefore stays on §5's cooperative MCP
+path until that handler exists, and the merge gate remains the only backstop for it.
+
+This is recorded here rather than left implicit because the wrong reading has a cost: it made the
+product look weaker on ZeroClaw than the runtime actually is, and it pointed the work at the wrong
+fix.
